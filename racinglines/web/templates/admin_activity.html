@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% from "_macros.html" import empty, page_head %}
+{% block title %}Activity{% endblock %}
+{% block content %}
+{{ page_head("Activity log") }}
+{% include "_admin_nav.html" %}
+<form method="get">
+  <label><span>User</span><select name="user"><option value="">all</option>{% for u in usernames %}<option {% if u == f_user %}selected{% endif %}>{{ u }}</option>{% endfor %}</select></label>
+  <label><span>Action</span><select name="action"><option value="">all</option>{% for a in actions %}<option {% if a == f_action %}selected{% endif %}>{{ a }}</option>{% endfor %}</select></label>
+  <label><span>Limit</span><input name="limit" value="{{ limit }}" size="5"></label>
+  <button>Filter</button>
+</form>
+{% if events %}<div class="scroll"><table><thead><tr><th>#</th><th class="l">When</th><th class="l">User</th><th class="l">Action</th><th class="l">Detail</th><th class="l">IP</th><th class="l">Path</th></tr></thead><tbody>
+{% for e in events %}<tr><td>{{ e.id }}</td><td class="l">{{ e.ts|fmt }}</td><td class="l">{{ e.username or "" }} <span class="muted">{{ e.role or "" }}</span></td>
+<td class="l {{ 'bad' if e.action in ('login_failed', 'bet_rejected', 'sql_write', 'db_delete') else '' }}">{{ e.action }}</td>
+<td class="wrap"><code>{{ e.detail if e.detail else "" }}</code></td><td class="l">{{ e.ip or "" }}</td><td class="l">{{ e.path or "" }}</td></tr>{% endfor %}
+</tbody></table></div>{% else %}{{ empty("No activity yet.") }}{% endif %}
+{% endblock %}

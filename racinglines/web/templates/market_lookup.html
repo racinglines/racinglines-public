@@ -1,0 +1,37 @@
+{% extends "base.html" %}{% from "_macros.html" import csrf, page_head %}
+{% block title %}Link a market{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/admin">Admin</a> › <a href="/markets/linked">Linked markets</a> › Link a market</p>
+{{ page_head("Link a Polymarket market") }}
+<div class="card">
+<form method="get"><label><span>Market or event URL / slug</span><input name="slug" value="{{ slug }}" size="60"></label><button class="primary">Look up</button></form>
+<form method="get"><label><span>…or search active events</span><input name="query" value="{{ query }}" size="40"></label><button>Search</button></form>
+</div>
+{% if error %}<p class="bad">{{ error }}</p>{% endif %}
+{% if results %}<div class="card"><h2>Search results</h2><ul>{% for r in results %}<li><a href="/markets/linked/lookup?slug={{ r.slug }}">{{ r.title }}</a> <span class="muted">{{ r.slug }} · ends {{ r.end_date }}</span></li>{% endfor %}</ul></div>
+{% elif query %}<p class="muted">No active events match "{{ query }}".</p>{% endif %}
+{% if slug and not markets and not error %}<p class="muted">No market found for "{{ slug }}".</p>{% endif %}
+{% for mk in markets %}
+<div class="card">
+<h2>{{ mk.question }}</h2>
+<p class="muted">{{ mk.slug }} · ends {{ mk.end_date }} · tick {{ mk.tick_size }} · min size {{ mk.min_size }} · {{ "neg-risk" if mk.neg_risk else "binary" }} · {{ "closed" if mk.closed else "open" }}</p>
+{% for o in mk.outcomes %}
+<form method="post" action="/markets/linked" class="card">{{ csrf() }}
+  <input type="hidden" name="market_slug" value="{{ mk.slug }}"><input type="hidden" name="question" value="{{ mk.question }}">
+  <input type="hidden" name="condition_id" value="{{ mk.condition_id }}"><input type="hidden" name="token_id" value="{{ o.token_id }}">
+  <input type="hidden" name="outcome" value="{{ o.outcome }}"><input type="hidden" name="neg_risk" value="{{ mk.neg_risk }}">
+  <input type="hidden" name="tick_size" value="{{ mk.tick_size }}"><input type="hidden" name="min_size" value="{{ mk.min_size }}">
+  <b>{{ o.outcome }}</b> <span class="muted">last {{ o.price }} · token {{ o.token_id[:12] }}…</span><br>
+  <label><span>Athlete id</span><input name="athlete_id" size="7" required></label>
+  <label><span>Prediction</span><select name="prediction">{% for p in predictions %}<option>{{ p }}</option>{% endfor %}</select></label>
+  <label><span>Race (race_* predictions; blank = next unknown round)</span><select name="race_id"><option value="">–</option>{% for r in races %}<option value="{{ r.race_id }}">{{ r.venue }} {{ r.start_date|fmt }} {{ r.category }}</option>{% endfor %}</select></label>
+  <label><span>Competition</span><select name="competition_id">{% for c in comps %}<option value="{{ c.id }}">{{ c.code }}</option>{% endfor %}</select></label>
+  <label><span>Category</span><select name="category_id"><option value="">–</option>{% for c in cats %}<option value="{{ c.id }}" {% if c.code == "ME" %}selected{% endif %}>{{ c.code }}</option>{% endfor %}</select></label>
+  <label><span>Token pays if prediction FAILS</span><input type="checkbox" name="invert" value="1" {% if o.outcome|lower == "no" %}checked{% endif %}></label>
+  <label><span>Note</span><input name="note" size="24"></label>
+  <button class="primary">Link</button>
+</form>
+{% endfor %}
+</div>
+{% endfor %}
+{% endblock %}

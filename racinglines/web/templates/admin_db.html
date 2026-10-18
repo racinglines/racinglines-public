@@ -1,0 +1,11 @@
+{% extends "base.html" %}{% from "_macros.html" import page_head %}
+{% block title %}Database{% endblock %}
+{% block content %}
+{{ page_head("Database explorer") }}
+{% include "_admin_nav.html" %}
+<p><a href="/admin/sql">SQL console →</a> <span class="muted">Row edits and deletes are logged in the activity log. Password hashes are never shown.</span></p>
+<div class="card"><table><thead><tr><th class="l">Table</th><th>Rows</th></tr></thead><tbody>
+{% for t in tables %}<tr><td class="l"><a href="/admin/db/{{ t.name }}">{{ t.name }}</a></td><td>{{ t.rows }}</td></tr>{% endfor %}
+</tbody></table></div>
+{% if hosted %}{% include "_storage_status.html" %}{% endif %}
+{% endblock %}

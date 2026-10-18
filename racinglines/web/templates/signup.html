@@ -1,0 +1,31 @@
+{% extends "base_public.html" %}
+{% block title %}Sign up · racinglines{% endblock %}
+{% block content %}
+<h1>racinglines</h1>
+<p class="sub">Fair prices and market making for race sports.</p>
+{% if not ready %}
+<div class="card">
+  <p><b>Sign-up isn't open yet.</b> Please check back soon.</p>
+  <p>You can try the app straight away from the <a href="/#account">home page</a> with "Try the demo".</p>
+</div>
+{% else %}
+<p>Create your beta account: a username, your email and a password. We use your email only to reach you about your account and the beta, and never show it to others. Beta accounts get the <b>pro</b> tier (fair prices, every strategy, the Lab)
+and start with <b>{{ "{:,}".format(grant) }} fantasy bucks</b>. Fantasy bucks only:
+nothing is ever sent to an exchange.</p>
+{% if error %}<p class="bad">{{ error }}</p>{% endif %}
+<form method="post" action="/signup" class="card signup-form">
+  <label><span>Username</span><input name="username" value="{{ form.username or '' }}" autocomplete="username"
+    maxlength="30" pattern="[A-Za-z0-9][A-Za-z0-9_.\-]{2,29}" required></label>
+  <p class="hint">3 to 30 letters, digits, ".", "_" or "-". Others may see it, so don't use your email.</p>
+  <label><span>Email</span><input name="email" type="email" value="{{ form.email or '' }}" autocomplete="email" maxlength="254" required></label>
+  <label><span>Password</span><input name="password" type="password" autocomplete="new-password" minlength="{{ pw_min }}" maxlength="128" required></label>
+  <label><span>Password again</span><input name="confirm" type="password" autocomplete="new-password" minlength="{{ pw_min }}" maxlength="128" required></label>
+  <p class="hint">At least {{ pw_min }} characters. We store only a salted hash; nobody, admins included, can read it.</p>
+  <label class="check mt"><input type="checkbox" name="adult" value="1" required>
+    <span>I'm 18 or older, and I understand this is a beta that uses fantasy bucks only.</span></label>
+  <label aria-hidden="true" class="sr-trap"><span>Website</span><input name="website" tabindex="-1" autocomplete="off"></label>
+  <button class="primary mt">Create account</button>
+</form>
+<p class="confused"><a href="/signin">Already have an account? Sign in</a> · <a href="/racinglines101">What is this?</a></p>
+{% endif %}
+{% endblock %}

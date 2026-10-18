@@ -1,0 +1,77 @@
+{# rows=N caps the table at N rows behind a "Show all"; filter="placeholder" adds a filter box (app.js). #}
+{% macro table(rows, cols, links={}, cap=0, filter="") -%}
+{% if rows %}<div class="scroll"{% if cap %} data-rows="{{ cap }}"{% endif %}{% if filter %} data-filter="{{ filter }}"{% endif %}><table>
+<thead><tr>{% for c in cols %}<th>{{ LABELS.get(c) or (c|replace("_", " ")|capitalize) }}</th>{% endfor %}</tr></thead>
+<tbody>{% for r in rows %}<tr>{% for c in cols %}{% set v = r.get(c) %}
+<td{% if v is string and v|length > 24 %} class="wrap"{% endif %}>{% if c in links and r.get(links[c][1]) is not none %}<a href="{{ links[c][0] }}{{ r.get(links[c][1]) }}">{{ v|fmt(c) }}</a>{% else %}{{ v|fmt(c) }}{% endif %}</td>{% endfor %}</tr>{% endfor %}</tbody>
+</table></div>{% else %}{{ empty("No rows yet.") }}{% endif %}
+{%- endmacro %}
+{# One muted line for an empty table or list: sentence case, "No X yet." #}
+{% macro empty(msg) %}<p class="muted">{{ msg }}</p>{% endmacro %}
+{% macro csrf() %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endmacro %}
+{# A one-line result of the last action (msg=... in the query string): green, or red for "Error: ...". #}
+{% macro flash(msg) %}{% if msg %}<p class="flash {{ 'bad' if msg.startswith('Error') else 'good' }}" role="status">{{ msg }}</p>{% endif %}{% endmacro %}
+{# The page's title row: h1, an optional one-line subtitle, and (via call) actions on the right. #}
+{% macro page_head(title, sub="") %}<div class="page-head"><div><h1>{{ title }}</h1>{% if sub %}<p class="sub">{{ sub }}</p>{% endif %}</div>{% if caller %}<div class="actions">{{ caller() }}</div>{% endif %}</div>{% endmacro %}
+{# A headline number: label, value, one line under it. tone: "money" colours the value by sign; else a class. #}
+{% macro kpi(label, value, sub="", tone="", cls="", small=False) -%}
+<div class="kpi {{ cls }}"><div class="l">{{ label }}</div><div class="v{{ ' sm' if small }} {{ pnl_cls(value) if tone == 'money' else tone }}">{{ value|money(true) if tone == 'money' else value }}</div>{% if sub %}<div class="s">{{ sub }}</div>{% endif %}</div>
+{%- endmacro %}
+{% macro pnl_cls(v) %}{{ 'good' if v is not none and v > 0 else ('bad' if v is not none and v < 0 else '') }}{% endmacro %}
+{# One sport_status.py cell (state ok|partial|none|na, short, text, sub) as a fixed-width quick-look badge: a
+   colour dot, the short numeric value and a label, with the full text/sub as a hover tooltip. #}
+{% macro status_badge(label, x) %}{% set cls = {"ok": "good", "partial": "warn", "none": "bad", "na": "muted"}[x.state] %}<span class="qs" title="{{ x.text }}{% if x.sub %} — {{ x.sub }}{% endif %}"><i class="dot {{ cls }}"></i><b>{{ x.short }}</b> {{ label }}</span>{% endmacro %}
+{# A signed money amount coloured by its sign: +$12.30 green, -$4.00 red, $0.00 plain. #}
+{% macro pnl(v, bold=False) %}{% if v is not none %}<{{ 'b' if bold else 'span' }} class="{{ pnl_cls(v) }}">{{ v|money(true) }}</{{ 'b' if bold else 'span' }}>{% endif %}{% endmacro %}
+{% macro bar(fair, mid=None, cls="", kalshi_mid=None) -%}
+{%- set fair = fair if fair == fair else none %}{% set mid = mid if mid == mid else none %}{% set kalshi_mid = kalshi_mid if kalshi_mid == kalshi_mid else none %}
+<div class="bar {{ cls }}" title="our fair {{ '%.1f%%'|format(fair * 100) if fair is not none }}{% if mid is not none %} · Polymarket {{ '%.1f%%'|format(mid * 100) }}{% endif %}{% if kalshi_mid is not none %} · Kalshi {{ '%.1f%%'|format(kalshi_mid * 100) }}{% endif %}">{% if fair is not none %}<div class="f" style="width:{{ [fair * 100, 100]|min }}%"></div>{% endif %}{% if mid is not none %}<div class="m" data-venue="polymarket" style="left:calc({{ [mid * 100, 100]|min }}% - 1px)"></div>{% endif %}{% if kalshi_mid is not none %}<div class="m" data-venue="kalshi" style="left:calc({{ [kalshi_mid * 100, 100]|min }}% - 1px); display:none;"></div>{% endif %}</div>
+{%- endmacro %}
+{% macro pct(p, digits=0) -%}{% set lo = 0.5 / 10 ** digits %}{% if p is none or p != p %}–{% elif 0 < p * 100 < lo %}&lt;{{ ("%." ~ digits ~ "f%%")|format(lo * 2) }}{% elif 100 - lo < p * 100 < 100 %}&gt;{{ ("%." ~ digits ~ "f%%")|format(100 - lo * 2) }}{% else %}{{ ("%." ~ digits ~ "f%%")|format(p * 100) }}{% endif %}{%- endmacro %}
+{% macro venue_chips(venues, mine=None) -%}
+<div class="chips">{% set ns = namespace(first_live=true) %}{% for v in venues %}{% if v.venue.kind == 'private' %}{% if mine and mine.open %}<span class="chip mine" title="my open markets · worst case">Private book · {{ mine.open }} mine</span>{% else %}<span class="chip pending" title="no private markets yet">Private book</span>{% endif %}
+{% elif v.venue.status == 'soon' %}<span class="chip soon" title="coming soon">{{ v.venue.name }} · soon</span>
+{% elif v.listed %}{% set pressed = ns.first_live %}{% if ns.first_live %}{% set ns.first_live = false %}{% endif %}<button type="button" class="chip live" data-toggle="venue" data-value="{{ v.venue.code }}" aria-pressed="{{ 'true' if pressed else 'false' }}" title="{{ v.listed }} outcomes listed · click to show indicator">{{ v.venue.name }} · live{% if v.volume %} · ${{ "{:,.0f}".format(v.volume) }}{% endif %}</button>
+{% else %}<span class="chip pending" title="not listed yet">{{ v.venue.name }} · pending</span>{% endif %}{% endfor %}</div>
+{%- endmacro %}
+{% macro chart(c) -%}
+{% if c and c.lines %}<svg class="chart" viewBox="0 0 {{ c.w }} {{ c.h }}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="price history">
+{% for y in c.yticks %}<line class="grid" x1="{{ c.pad }}" x2="{{ c.w }}" y1="{{ y.y }}" y2="{{ y.y }}"/><text x="2" y="{{ y.y + 3 }}">{{ y.label }}</text>{% endfor %}
+{% for x in c.xticks %}<text x="{{ x.x }}" y="{{ c.h - 2 }}" text-anchor="middle">{{ x.label }}</text>{% endfor %}
+{% for m in c.markers %}<line x1="{{ m.x }}" x2="{{ m.x }}" y1="0" y2="{{ c.h - 14 }}" stroke="var(--muted)" stroke-dasharray="3 3"/><text x="{{ m.x + (-3 if m.anchor == 'end' else 3) }}" y="10" text-anchor="{{ m.anchor }}">{{ m.label }}</text>{% endfor %}
+{% for l in c.lines %}<polyline fill="none" stroke="{{ l.color }}" stroke-width="{{ 2.8 if l.dash else 1.6 }}"{% if l.dash %} stroke-dasharray="7 4"{% endif %} points="{{ l.points }}"/>{% if l.fair_y is not none %}<line x1="{{ c.pad }}" x2="{{ c.w }}" y1="{{ l.fair_y }}" y2="{{ l.fair_y }}" stroke="{{ l.color }}" stroke-dasharray="2 4" opacity=".7"/>{% endif %}{% endfor %}
+{% if c.zero_y is defined and c.zero_y is not none %}<line x1="{{ c.pad }}" x2="{{ c.w }}" y1="{{ c.zero_y }}" y2="{{ c.zero_y }}" stroke="var(--muted)" stroke-width="1"/>{% endif %}
+</svg>
+<div class="legend">{% for l in c.lines %}<i style="background:{{ l.color }}"></i>{{ l.label }}{% endfor %}{% if c.zero_y is not defined %} · solid = {{ c.venue if c.venue is defined else 'Polymarket' }} price, dotted = our fair{% endif %}</div>{% endif %}
+{%- endmacro %}
+
+{% macro pc(x) %}{% if x is not none and x >= 0.0005 %}{{ "%.1f"|format(x * 100) }}%{% elif x is not none %}<span class="muted">–</span>{% endif %}{% endmacro %}
+{% macro px(x) %}{{ "%.2f"|format(x) if x is not none else "–" }}{% endmacro %}
+{% set kind_word = {"race_win": "wins", "race_podium": "on the podium", "race_pole": "on pole", "race_h2h": "(first ahead)", "race_constructor_top": "top constructor", "race_safety_car": "in the race", "race_red_flag": "in the race", "race_rain": "in the race", "race_fastest_lap": "fastest lap"} %}
+{# One edge / gap cell (a probability difference, fair vs market): warn over 10 pts either way, good over +2, bad under -2.
+   label replaces the "+1.2 pts" text (the exchange "Call" column), good overrides the +2 test, mark=false drops the warning glyph and tooltip, warn=false the warn tone too, cls adds classes. #}
+{% macro edge_cell(e, label=none, good=none, mark=true, cls="", pts=true, warn=true) -%}
+{%- set big = warn and e and (e > 0.10 or e < -0.10) -%}
+{%- set tone = 'warn' if big else (('good' if good else '') if good is not none else ('good' if e and e > 0.02 else ('bad' if e and e < -0.02 else ''))) -%}
+<td class="{{ (cls ~ ' ' ~ tone)|trim }}"{% if big and mark %} title="Large gap to the market: check the model before quoting (e.g. tail events such as backmarker points in chaotic races aren't modelled well yet)"{% endif %}>
+{%- if label is not none %}{{ label }}{% elif e is not none %}{{ "%+.1f"|format(e * 100) }}{{ " pts" if pts }}{% endif %}{% if big and mark %} ⚠{% endif %}</td>
+{%- endmacro %}
+{% macro new_badge(n=0) %}<span class="pill new" title="first seen on Polymarket in the last 48 hours">{{ n ~ " " if n else "" }}new</span>{% endmacro %}
+
+{% macro paper_banner(n) %}{% if n and n.profile %}<div class="paper-banner"><span>Fantasy account · <b>{{ n.profile }}</b></span>
+<span>Polymarket P&amp;L <b class="{{ pnl_cls(n.pnl) }}">{{ n.pnl|money(true) }}</b></span>
+{% if n.private is not none %}<span>Private book <b class="{{ pnl_cls(n.private) }}">{{ n.private|money(true) }}</b></span>{% endif %}
+<span class="links"><a href="/strategy">Strategy: track record and how it got here →</a> · <a href="/positions">Positions →</a></span></div>{% endif %}{% endmacro %}
+
+{# Demo-only context: an info bubble, tagged invisibly (data-tag="demo-context") so it can be found and
+   dropped for real users: RACINGLINES_DEMO_CONTEXT=0 hides every one; before launch, delete the calls
+   (grep -rn demo_context racinglines/web/templates). Not used on the 101 page, which is the demo's own. #}
+{% macro demo_context(title="") %}{% if demo_context_on() %}<aside class="info-bubble" data-tag="demo-context" role="note"><span class="info-icon" aria-hidden="true">i</span><div>{% if title %}<b>{{ title }}</b> {% endif %}{{ caller() }}</div></aside>{% endif %}{% endmacro %}
+
+{# The compact source note (owner, 2026-10-13): one muted line naming where a page's numbers come from: the sport's results
+   feed(s) (sports/<code>.toml [sources]), the price venues shown, and the model run behind the fair values
+   (racinglines/attribution.py note). sport: a sport or competition code, or a list; venues: codes, names or Venue objects. #}
+{% macro source_note(sport=none, venues=none, run=none, as_of=none, model=false, sportsbook=false) -%}
+{%- if sources_note is defined %}{% set n = sources_note(sport, venues, run, as_of, model, sportsbook) -%}
+{%- if n.parts %}<p class="legend source-note">Sources: {% for p in n.parts %}{{ p.label }}: {% for i in p.entries %}{% if i.url %}<a href="{{ i.url }}" rel="nofollow noopener">{{ i.name }}</a>{% else %}{{ i.name }}{% endif %}{{ ", " if not loop.last }}{% endfor %}{{ " · " if not loop.last }}{% endfor %}</p>{% endif %}{% endif %}
+{%- endmacro %}

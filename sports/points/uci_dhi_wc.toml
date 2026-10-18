@@ -1,0 +1,57 @@
+# UCI DHI World Cup championship points, by era and round (docs/todo.md, Points validation).
+#
+# EVERY TABLE HERE IS A PLACEHOLDER (official = false): the schema's approximate scales copied into
+# each era. Replace `points` with the official UCI scales (UCI MTB regulations Part 4, or the
+# standings PDFs on ChronoRace), set `official = true`, cite the source in `note`, then:
+#
+#   racinglines data points mtb_dh import sports/points/uci_dhi_wc.toml --db
+#   racinglines data points mtb_dh check --season 2026 --standings standings_2026_r7.csv --db
+#
+# round_kind: final | qual | qual1 | semi (the qualifying round that pays points in that era).
+# points[0] = 1st place; places beyond the list score 0.
+
+[[scheme]]
+season_from = 2021
+season_to = 2022
+round_kind = "final"
+points = [250, 210, 180, 160, 140, 125, 110, 95, 80, 75, 70, 65, 60, 55, 50, 45, 40, 35, 30, 25, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11]
+official = false
+note = "PLACEHOLDER. 2021-22: one qualifier, then the Final"
+
+[[scheme]]
+season_from = 2021
+season_to = 2022
+round_kind = "qual"
+points = [60, 50, 40, 35, 30, 25, 20, 18, 16, 14, 12, 10, 9, 8, 7, 6, 5, 4, 3, 2]
+official = false
+note = "PLACEHOLDER. 2021-22: one qualifier, then the Final"
+
+[[scheme]]
+season_from = 2023
+season_to = 2024
+round_kind = "final"
+points = [250, 210, 180, 160, 140, 125, 110, 95, 80, 75, 70, 65, 60, 55, 50, 45, 40, 35, 30, 25, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11]
+official = false
+note = "PLACEHOLDER. 2023-24: qualifier, semi-final, Final"
+
+[[scheme]]
+season_from = 2023
+season_to = 2024
+round_kind = "semi"
+points = [60, 50, 40, 35, 30, 25, 20, 18, 16, 14, 12, 10, 9, 8, 7, 6, 5, 4, 3, 2]
+official = false
+note = "PLACEHOLDER. 2023-24: qualifier, semi-final, Final"
+
+[[scheme]]
+season_from = 2025
+round_kind = "final"
+points = [250, 210, 180, 160, 140, 125, 110, 95, 80, 75, 70, 65, 60, 55, 50, 45, 40, 35, 30, 25, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11]
+official = false
+note = "PLACEHOLDER. 2025-26: Q1 (top 20 to the Final), Q2 (top 10), Final"
+
+[[scheme]]
+season_from = 2025
+round_kind = "qual1"
+points = [60, 50, 40, 35, 30, 25, 20, 18, 16, 14, 12, 10, 9, 8, 7, 6, 5, 4, 3, 2]
+official = false
+note = "PLACEHOLDER. 2025-26: Q1 (top 20 to the Final), Q2 (top 10), Final"

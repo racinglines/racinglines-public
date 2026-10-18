@@ -1,0 +1,12 @@
+{% from "_macros.html" import empty, csrf, pnl_cls %}
+<h2>Event diagnostics</h2>
+<p class="legend">A past event priced as of chosen cutoffs, compared with Polymarket at the same moment and scored on the result, plus a maker replay on Polymarket's real trade tape{% if kalshi %} and on Kalshi's (with its maker fee){% endif %} (conservative fills, ±2¢; tune the strategy knobs on the details page).</p>
+<div class="scroll"><table><thead><tr><th class="l">Event</th><th class="l">As-of runs</th><th>Win Brier: model / PM</th><th>Podium Brier: model / PM</th><th>Replay fills</th><th>Mark-out 60m</th><th>Replay P&amp;L</th>{% if kalshi %}<th>Kalshi fills</th><th>Kalshi P&amp;L</th>{% endif %}<th></th></tr></thead><tbody>
+{% for e in event_diags %}<tr><td class="l">{{ e.venue }} <span class="muted">{{ e.event_key }}</span></td><td class="l">{{ e.runs }} <span class="muted">({{ e.cutoffs }})</span></td>
+<td>{% if e.brier_win_model is not none %}<span class="{{ 'good' if e.brier_win_model < e.brier_win_pm else 'bad' }}">{{ "%.3f"|format(e.brier_win_model) }}</span> / {{ "%.3f"|format(e.brier_win_pm) }}{% endif %}</td>
+<td>{% if e.brier_podium_model is not none %}<span class="{{ 'good' if e.brier_podium_model < e.brier_podium_pm else 'bad' }}">{{ "%.3f"|format(e.brier_podium_model) }}</span> / {{ "%.3f"|format(e.brier_podium_pm) }}{% endif %}</td>
+<td>{{ e.replay_fills if e.replay_fills is not none else "no tape" }}</td><td>{{ e.replay_markout|fmt("markout_60m") if e.replay_markout is not none }}</td>
+<td class="{{ pnl_cls(e.replay_pnl) }}">{{ e.replay_pnl|fmt("pnl") if e.replay_pnl is not none }}</td>
+{%- if kalshi %}<td>{{ e.kalshi_fills if e.kalshi_fills else "no tape" }}</td><td class="{{ pnl_cls(e.kalshi_pnl) }}">{% if e.kalshi_fills %}<a href="/lab/diagnostics/{{ e.run_id }}?venue=kalshi#s5">{{ e.kalshi_pnl|fmt("pnl") }}</a>{% endif %}</td>{% endif %}
+<td><a href="/lab/diagnostics/{{ e.run_id }}">details &amp; strategy replay →</a></td></tr>
+{% else %}<tr><td colspan="{{ 10 if kalshi else 8 }}">{{ empty("No diagnostics yet: run an Event diagnostic above.") }}</td></tr>{% endfor %}</tbody></table></div>

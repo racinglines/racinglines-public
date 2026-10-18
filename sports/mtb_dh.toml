@@ -1,0 +1,161 @@
+# UCI downhill: what differs from other sports, as data. Read by racinglines/sports.py;
+# the code keeps its own constant names and takes the values from here. Changing a
+# value here changes results: re-run the tests.
+
+[sport]
+code = "mtb_dh"
+name = "Mountain bike downhill"
+result_kind = "time"              # results are run times
+model_family = "global"           # the one engine (racinglines/models/model_global.py), with [model] below
+pricing_model = "racinglines.models.model_global:GlobalModel"   # every modelled sport's (docs/backtest-core.md)
+# Downhill's engine before the one engine, kept runnable for comparisons (`racinglines backtest walk-forward mtb_dh
+# --model timed_runs`): the same run-times core and settings, so its prices equal the engine's (tests/test_one_engine.py)
+challengers = { timed_runs = "racinglines.models.race_model:TimedRuns" }
+display_order = 5
+# Left off the Markets page (sections and calendar) for everyone, admins included (owner, 2026-10-12: "UCI road only. Hide
+# UCI DH for now"). Its own pages, the live viewer, recording and pricing are unchanged; delete this line to show it again.
+markets_board = false
+results_modules = ["racinglines.sources.chronorace"]   # what fetches its results (`backtest coverage`)
+
+[league]
+code = "uci_mtb"
+name = "UCI Mountain Bike World Series / World Cup"
+organizer = "UCI"
+
+[competition]
+code = "uci_dhi_wc"
+name = "UCI Downhill World Cup"
+display_name = "UCI Downhill"
+
+[competition.categories]
+ME = ["Men Elite", "M", "elite"]
+WE = ["Women Elite", "W", "elite"]
+MJ = ["Men Junior", "M", "junior"]
+WJ = ["Women Junior", "W", "junior"]
+
+[rounds]
+# source-data round labels -> running order within a race
+order = { practice = 0, seeding = 1, qual = 2, qual1 = 2, qual2 = 3, semi = 4, final = 5 }
+race = ["qual", "qual1", "qual2", "semi", "final"]
+run_weights = { practice = 0.5, qual = 1.0, qual1 = 1.0, qual2 = 1.0, semi = 1.0, final = 1.0 }
+# format for unraced rounds; past events use their own, inferred from results
+default_format = { kind = "q1q2", q1_to_final = 20, q2_to_final = 10 }
+
+[model]
+# The one engine's inputs (racinglines/models/inputs/__init__.py): timed runs pick the run-times core
+# (models/inputs/run_times/core.py, the downhill engine that was race_model.TimedRuns); "practice" adds the timed
+# training runs at [rounds] run_weights.practice. Decision log 2026-10-11 "One engine" (provisional, staging only):
+# every price as before.
+inputs = ["run_times", "practice"]
+name = "timed_runs"               # model_runs.model of its runs, as before
+
+[model.defaults]
+# The engine's per-sport defaults: downhill's settings as they were (models/inputs/run_times/settings.py DHSettings,
+# from models/inputs/run_times/model.py's constants). Equal to the code's, so every settings key and price is
+# unchanged (tests/test_one_engine.py pins them). eps_df stays unset (normal run noise): TOML has no "not set".
+category = "ME"
+sims = 5000
+half_life_days = 240.0            # HALF_LIFE_DAYS
+prior_n = 0.5                     # rider pace shrinkage toward the field median, in runs' weight (PRIOR_N)
+junior_weight = 0.25              # junior runs' training weight (CATEGORY_WEIGHTS["MJ"])
+train_scope = "all"
+
+[data]
+# the L1 input frames this sport's adapter (racinglines/frames/mtb_dh.py) builds from the tidy runs frame, docs/frames.md
+frames = ["entrants", "sessions", "classifications", "official_results"]
+
+# When an event is priced (racinglines/core/stages.py): the walk-forward prices each event once, before it
+[stages]
+pre_label = "pre-event"
+pre_minutes = 0
+
+[points]
+# PLACEHOLDER: approximate UCI DHI World Cup scales, not the official tables (see docs/todo.md)
+final = [250, 210, 180, 160, 140, 125, 110, 95, 80, 75,
+         70, 65, 60, 55, 50, 45, 40, 35, 30, 25,
+         20, 19, 18, 17, 16, 15, 14, 13, 12, 11]
+qual = [60, 50, 40, 35, 30, 25, 20, 18, 16, 14,
+        12, 10, 9, 8, 7, 6, 5, 4, 3, 2]
+qual_round = { q1q2 = "qual1", semi = "semi", single = "qual" }   # round the qualifying points are paid on
+
+[venues]
+# canonical slug = [display name, country]
+bielsko-biala = ["Bielsko-Biała", "POL"]
+fort-william = ["Fort William", "GBR"]
+la-thuile = ["La Thuile", "ITA"]
+lake-placid = ["Lake Placid", "USA"]
+lenzerheide = ["Lenzerheide", "SUI"]
+leogang = ["Leogang", "AUT"]
+les-gets = ["Les Gets", "FRA"]
+loudenvielle = ["Loudenvielle", "FRA"]
+lourdes = ["Lourdes", "FRA"]
+maribor = ["Maribor", "SLO"]
+mona-yongpyong = ["Mona Yongpyong", "KOR"]
+mont-sainte-anne = ["Mont-Sainte-Anne", "CAN"]
+pal-arinsal = ["Pal Arinsal (Vallnord)", "AND"]
+snowshoe = ["Snowshoe", "USA"]
+val-di-sole = ["Val di Sole", "ITA"]
+
+[venue_aliases]
+# other spellings seen in source data -> canonical slug
+mont-ste-anne = "mont-sainte-anne"
+vallnord = "pal-arinsal"
+vallnord-pal-arinsal = "pal-arinsal"
+
+[markets]
+venues = ["private"]                  # no exchange lists downhill yet
+standard_kinds = ["race_win", "race_podium", "race_make_final"]
+
+[search]
+# The search queue's job kinds for this sport (racinglines/pipelines/search.py): the model-only walk-forward.
+jobs = ["walk_forward"]
+
+[live]
+# A live final (pipelines/live_dh.py): the timing feed polled every few seconds, a Monte Carlo of the rest of
+# the final, the maker re-quoting every rider's markets. live_dh's constants take their values from here.
+adapter = "racinglines.pipelines.live_dh"
+stream = "UCI live timing (ChronoRace), polled every few seconds"
+
+[live.sources]
+historical = { kind = "chronorace", url = "https://prod.chronorace.be/api/results/uci/dh/cms/{slug}" }
+live = { kind = "chronorace_live", url = "https://prod.chronorace.be/api/results/generic/uci/{slug}/dh?key={key}" }
+
+[live.poll]
+mode = "interval"
+interval_s = 5                  # the crowd's rate is per this many seconds; faster polls scale it down
+late_interval_s = 2             # the late window polls every 2 s ...
+late_when_left = 3              # ... once no more than 3 riders are still to start
+stale_h = 6                     # not updated for this long: the Live tab turns grey (a replay)
+
+[live.markets]
+kinds = ["race_win", "race_podium"]
+names = { win = "Wins the final", podium = "Podium (top 3)" }
+
+[live.quoting]
+half_spread = 0.03
+widen_on_course = 0.02          # the rider is on course: information arrives fast
+widen_next = 0.01               # next few to start
+max_pos = 2500.0                # the maker's shares per market, either way
+skew = 1.0                      # quotes lean against inventory: shift = -skew x half-spread x inventory / max_pos
+
+[live.crowd]
+# 1,000 anonymous takers, each hitting a quoted market with probability p per poll, on a random side; each
+# with an event budget of $10-200 (log-uniform) and betting part of what's left each time
+takers = 1000
+p = 0.0004
+budget = [10.0, 200.0]
+bet = [0.2, 0.8]
+min_bet = 2.0
+seed = 20260927
+late_cap = 100.0                # the late window: every taker gets a fresh $100 ...
+late_pace = 50.0                # ... and the crowd trades at 50x the normal rate
+
+[live.freeze]
+market = "a rider's markets are pulled after their last split"
+close = "when the final is over"
+
+[sources]
+# The compact source note on every page, MCP answer, book render and report that shows this sport's data
+# (racinglines/attribution.py).
+# Results/timing feed(s) as data, taken from [live] stream / [live.sources] urls below; racinglines/sources/chronorace/download.py.
+results = [{ name = "ChronoRace (UCI timing)", url = "https://prod.chronorace.be/" }]

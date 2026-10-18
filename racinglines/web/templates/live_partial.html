@@ -1,0 +1,1 @@
+{% if not snap %}<h1>Live</h1><p class="muted">No live event right now. The next private-book event (a downhill final, an F1 weekend) will show here while it runs.</p>{% else %}{% include "live_" ~ sport ~ ".html" %}{% endif %}

@@ -1,0 +1,389 @@
+{% extends "base_public.html" %}
+{% block title %}Racinglines 101{% endblock %}
+{% block main_class %}r101 r-seq{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/">racinglines</a> › 101</p>
+<h1>Racinglines 101</h1>
+<p class="sub">The short version of what this demo does, for anyone who just clicked "I'm already confused": how we trade, how the prediction engine works, how we score it, and how to use the app.</p>
+
+<div class="term-layout" data-term-parts>
+<nav class="term-nav r-nav" aria-label="Racinglines 101 parts">
+  <a href="#trade" data-term-tab="trade">How we trade</a>
+  <div class="r-sub"><a href="#short">The one-sentence version</a><a href="#roles">Makers and takers</a><a href="#why-two">Why two roles</a><a href="#strategies">The two demo strategies</a><a href="#against">Betting against the model?</a></div>
+  <a href="#engine" data-term-tab="engine">How the engine works</a>
+  <div class="r-sub"><a href="#engine">One engine for every sport</a><a href="#pace">Measuring who's fast</a><a href="#simulate">Running the race 10,000 times</a><a href="#prices">From simulations to prices</a><a href="#weekend">Updating through the weekend</a><a href="#real">What's real and what isn't</a></div>
+  <a href="#score" data-term-tab="score">How we score the engine</a>
+  <div class="r-sub"><a href="#brier">The Brier score</a><a href="#misses">Brier vs log loss</a><a href="#calibration">Honest and sharp</a><a href="#sharpen">Fixing a flat forecast</a><a href="#scorecard">Our scorecard</a></div>
+  <a href="#use" data-term-tab="use">Using the app</a>
+  <div class="r-sub"><a href="#app">The web app</a><a href="#cli">The command line</a><a href="#mcp">Claude, through MCP</a></div>
+</nav>
+<div class="term-parts">
+<div class="term-partbox" id="trade">
+<h2 class="term-part">How we trade</h2>
+<section class="r-sec" id="short">
+<h3>The one-sentence version</h3>
+<p>We built a computer model that guesses how an F1 race will go (who wins, who makes the podium, who beats their teammate),
+and we use it to trade on <a href="https://polymarket.com" target="_blank" rel="noopener">Polymarket</a>, a site where people bet on those questions.
+There are two ways to trade, and this demo shows both.</p>
+</section>
+<section class="r-sec" id="roles">
+<h3>Makers and takers</h3>
+<p>Think of a currency exchange booth at an airport. The booth posts two prices: what it pays for your dollars, and what it charges you for them.
+The booth is the <b>maker</b>. You, walking up and trading at those prices, are the <b>taker</b>.</p>
+<div class="roles">
+  <div class="role-card maker"><h3>Maker: the booth</h3>
+    <p>Posts a price to buy <i>and</i> a slightly higher price to sell, then waits. It earns the small gap between the two, over and over.
+    Its job is to know the fair price better than anyone walking by, and to step aside when it doesn't.</p></div>
+  <div class="role-card taker"><h3>Taker: the traveller</h3>
+    <p>Doesn't post anything. It looks at the prices already on offer and trades only when one looks like a bargain.
+    Its job is to be picky: most of the time, it does nothing.</p></div>
+</div>
+<p>On Polymarket, a "price" is a probability. If "Norris wins" trades at 30¢, the crowd thinks he has about a 30% chance.
+If our model says 45%, that's a bargain to a taker. To a maker, it's a sign to quote around 45¢ instead of 30¢, or not at all.</p>
+</section>
+<section class="r-sec" id="why-two">
+<h3>Why two roles</h3>
+<ul>
+  <li><b>They make money in different ways.</b> A maker earns small, steady amounts from the gap between its prices. A taker earns occasional,
+    larger amounts when it spots a mispriced market. In our backtests the two barely move together, so running both is steadier than running either one.</li>
+  <li><b>They need different amounts of trust in the model.</b> A maker lives or dies by its fair price: if it's wrong, faster traders pick it off.
+    A taker only needs the model to be right about the few markets where it disagrees strongly with the crowd.</li>
+  <li><b>The model is the maker's secret sauce.</b> If takers could see the fair price the maker's quotes come from, they could trade against the maker
+    whenever its quotes lagged the model. So, like a real exchange booth, the maker keeps its model to itself.</li>
+</ul>
+</section>
+<section class="r-sec" id="strategies">
+<h3>The two demo strategies</h3>
+<p><b>Try the demo</b> opens the pro demo, the maker account running C. The demo taker, which follows A, signs in by name. For the fantasy league alpha every account gets the same app: five strategy styles to follow in the Lab, built from strategies like these, and the Lab's backtests and research.</p>
+<div class="roles">
+  <div class="role-card taker"><h3>A: the core taker</h3>
+    <p>After each practice and qualifying session, reprices every race market. It buys only when the model and the crowd disagree by
+    10 points or more (5 for head-to-head markets), sizes the bet by how big the gap is (at most $50 a market), and adjusts as the weekend goes on.</p></div>
+  <div class="role-card maker"><h3>C: the maker sleeve</h3>
+    <p>Quotes 2¢ either side of our fair price, 25 shares at a time, leaning against whatever it already holds.
+    It stays out of thin markets, near-certain ones, and any market where the model and the crowd disagree by more than 5 points.</p></div>
+</div>
+<p>Both were chosen by testing hundreds of setting combinations on past races, then keeping only the ones that made money in <i>both</i> seasons we have market data for.</p>
+</section>
+<section class="r-sec" id="against">
+<h3>Betting against the model?</h3>
+
+<p>No. Every strategy takes its lead from the model. A taker only buys the side the model calls cheap, and a maker only quotes around the model's own price,
+staying out of markets where it and the crowd disagree too much.</p>
+<p>A bet can still be sold at a loss. Strategy A re-prices after every session, so if the model changes its mind, A sells. When the market will pay more
+than the model now thinks the bet is worth, selling is the better deal, whatever A paid for it. If the gap only shrinks, A sells part of the bet to carry
+less risk. There is no stop-loss: a strategy sells because the model changed, never just because the price moved against it.</p>
+</section>
+<p class="term-next r-pager"><a href="/">← The home page and the demo</a><a href="#engine" data-term-tab="engine">Next: How the engine works →</a></p>
+</div>
+<div class="term-partbox" id="engine">
+<h2 class="term-part">How the engine works</h2>
+<section class="r-sec" id="engine">
+<h3>One engine for every sport</h3>
+
+<p>Behind every price on this site is one prediction engine. It doesn't know what F1 or downhill is. Each sport comes with a short description
+of the data it has, and the engine prices whatever it's given: just finishing positions, or every lap and sector time, or every timed run.</p>
+<div class="scroll"><table>
+<thead><tr><th class="l">Sport</th><th class="l">What the engine reads</th></tr></thead><tbody>
+<tr><td class="l"><b>F1</b></td><td class="l">Results, qualifying, the starting grid, practice, every lap and every sector</td></tr>
+<tr><td class="l"><b>Downhill MTB</b></td><td class="l">Every timed run, practice included</td></tr>
+<tr><td class="l"><b>NASCAR</b></td><td class="l">Results, qualifying and fastest laps</td></tr>
+<tr><td class="l"><b>MotoGP</b></td><td class="l">Results and qualifying</td></tr>
+</tbody></table></div>
+<p>More detail means sharper prices, but the steps are the same in every sport: measure how fast everyone is, run the race thousands of times
+on a computer, and count.</p>
+</section>
+<section class="r-sec" id="pace">
+<h3>Measuring who's fast</h3>
+
+<p>The engine starts by turning past races into a pace for every competitor. Three ideas do most of the work.</p>
+<ul>
+  <li><b>Recent races count more.</b> A race's weight halves every 120 days in F1 (240 in downhill), so last month matters more than last season,
+    but last season still counts.</li>
+  <li><b>A few results aren't enough to be a favourite.</b> Everyone is pulled toward the middle of the field until they've raced enough to
+    earn their place. One lucky weekend doesn't make a rookie a title contender.</li>
+  <li><b>The right kind of evidence.</b> Finishing 2nd of 5 says less than 2nd of 40, so results are scaled by the size of the field.
+    In downhill, times are compared as percentages, so a 2-second gap means the same on a short track and a long one.</li>
+</ul>
+<p>F1 gets a richer version. The engine splits pace into the <b>car</b> (shared by both drivers in a team) and the <b>driver</b> (how they compare
+with their teammate). In our data the car explains about 60% of the spread in qualifying and 86% in race pace. It also learns how each car does on
+fast and slow sections of track, so it can tell a team that shines in Monza from one that shines in Monaco.</p>
+</section>
+<section class="r-sec" id="simulate">
+<h3>Running the race 10,000 times</h3>
+
+<p>A pace isn't a prediction. Races have crashes, bad starts and lucky safety cars. So the engine runs the race on a computer, over and over:
+10,000 times for an F1 race. Each run is one version of Sunday.</p>
+<div class="roles">
+  <div class="role-card"><h3>What goes into one run</h3>
+    <p>A starting grid (the real one once qualifying is over, a simulated one before), each driver's expected pace, a dose of random luck,
+    and a chance of retiring based on the team's recent reliability. Confirmed grid penalties move drivers back before the start.</p></div>
+  <div class="role-card"><h3>Teammates share some luck</h3>
+    <p>A car with a bad setup is usually slow for both drivers. So part of the random luck is drawn once per team and shared by both drivers,
+    measured from past races: about half of it in qualifying, a fifth in the race.</p></div>
+</div>
+<p>Overtaking matters too. At a track where passing is hard, the grid decides more of the result; at one where it's easy, race pace does.
+The engine learns how much from each circuit's history.</p>
+</section>
+<section class="r-sec" id="prices">
+<h3>From simulations to prices</h3>
+
+<p>Once the engine has 10,000 versions of the race, every question is a count.</p>
+<div class="scroll"><table>
+<thead><tr><th class="l">Market</th><th class="l">How it's priced</th></tr></thead><tbody>
+<tr><td class="l"><b>Win</b></td><td class="l">Norris wins 4,500 of 10,000 runs: 45%</td></tr>
+<tr><td class="l"><b>Podium, top 10</b></td><td class="l">The share of runs he finishes in the top 3, or top 10</td></tr>
+<tr><td class="l"><b>Head-to-head</b></td><td class="l">The share of runs he finishes ahead of the other driver</td></tr>
+<tr><td class="l"><b>Pole</b></td><td class="l">The share of runs he's first on the simulated grid</td></tr>
+<tr><td class="l"><b>Championship</b></td><td class="l">Today's points plus every remaining race simulated, many times over</td></tr>
+</tbody></table></div>
+<p>Because every market comes from the same runs, the prices agree with each other. A driver can't be more likely to win than to finish on the podium.
+That 45% is the <b>fair</b> price the strategies compare with the market's.</p>
+</section>
+<section class="r-sec" id="weekend">
+<h3>Updating through the weekend</h3>
+
+<p>The engine re-prices after every session: each practice, sprint qualifying, the sprint and qualifying. Practice laps sharpen the pace estimates;
+once qualifying is over, the simulated grid is replaced by the real one. On a sprint weekend the sprint is priced as a race of its own,
+with its own grid and points.</p>
+<p>Prices are always <b>as of</b> a moment. A price made on Friday night only uses what was known on Friday night. That rule is what makes a backtest
+honest: replaying last season, the engine never sees a result before it happened.</p>
+</section>
+<section class="r-sec" id="real">
+<h3>What's real and what isn't</h3>
+<p class="note"><b>This is an early demo that paper trades.</b> From now through 2027, the two strategies follow real Polymarket F1 markets live, race weekend
+by race weekend, and record the trades they <i>would</i> make at the real prices. No real orders are placed and no real money moves.</p>
+<ul>
+  <li><b>The backtests</b> replay the full history of Polymarket's F1 race markets: every price and every trade, from the markets' first race onward.</li>
+  <li><b>The model</b> learns from official F1 timing data (results, lap times, practice and qualifying) going back to 2020, several seasons before those markets existed.</li>
+  <li><b>No peeking:</b> at every point in a backtest, the model only uses data that existed at that moment. That's the same rule it follows live.</li>
+  <li><b>Past results don't promise future ones.</b> Two race weekends are mostly luck; the paper-trading season is how we find out whether the backtests hold up.</li>
+  <li><b>The demo accounts' track record</b> (2025 and 2026 so far) is one of those replays, run with the strategy each account used at the time,
+    and it's labelled <i>backtest replay</i> in the app. The <b>demo maker</b> started 2025 on the default setup,
+    switched twice mid-season to whatever the Edge Finder showed was working <i>so far</i>, then chose C for 2026 as the steadiest of the leaders.
+    The <b>demo taker</b> has always followed A, taking about a third of its recommendations (the hotter ones more often).
+    Each account's strategy page (in the Lab) shows the whole story: cumulative paper P&amp;L, every decision and the evidence behind it, and every weekend.</li>
+</ul>
+</section>
+<p class="term-next r-pager"><a href="#trade" data-term-tab="trade">← How we trade</a><a href="#score" data-term-tab="score">Next: How we score the engine →</a></p>
+</div>
+<div class="term-partbox" id="score">
+<h2 class="term-part">How we score the engine</h2>
+<section class="r-sec" id="brier">
+<h3>The Brier score</h3>
+<p>A price is a forecast, so we grade it like one. The main grade is the <b>Brier score</b>: the average squared gap between the chance we gave
+and what happened, where what happened is 1 if it came true and 0 if it didn't.</p>
+<p class="r-formula">Brier = average of (p − y)²</p>
+<ul>
+  <li><b>Lower is better.</b> 0 is a perfect forecast; the worst a single forecast can score is 1.</li>
+  <li><b>A coin flip scores 0.25</b>, whatever happens: (0.5 − 1)² and (0.5 − 0)² are both 0.25.</li>
+  <li>It's in the same units as a probability, so it's easy to compare forecasts on the same races.</li>
+</ul>
+<p>The closest thing in racing to a coin flip is the teammate head-to-head: will driver A finish ahead of driver B? Here is one, worked out.
+The box runs real Python: edit the numbers and press Run.</p>
+<div class="term py" data-py>
+  <div class="term-bar" aria-hidden="true"><i></i><i></i><i></i><span>Python, editable</span></div>
+  <textarea class="py-code" data-py-code spellcheck="false" rows="9" aria-label="Python code">{% raw %}# One teammate head-to-head, worked out: y = 1 if driver A beat B,
+# p = our chance that A finishes ahead
+for p, y in [(0.7, 1), (0.7, 0), (0.9, 1), (0.9, 0), (0.5, 1)]:
+    result = "beat" if y else "lost"
+    print(f"forecast {p:.0%}  {result}  ({p} - {y})² = {(p - y) ** 2:.2f}")
+
+# A coin flip (p = 0.5) scores 0.25 whatever happens
+print("coin flip:", (0.5 - 1) ** 2, (0.5 - 0) ** 2){% endraw %}</textarea>
+  <div class="py-run"><button type="button" class="term-play" data-py-run hidden>Run</button></div>
+  <pre class="term-out py-out" data-py-out>{% raw %}forecast 70%  beat  (0.7 - 1)² = 0.09
+forecast 70%  lost  (0.7 - 0)² = 0.49
+forecast 90%  beat  (0.9 - 1)² = 0.01
+forecast 90%  lost  (0.9 - 0)² = 0.81
+forecast 50%  beat  (0.5 - 1)² = 0.25
+coin flip: 0.25 0.25{% endraw %}</pre>
+</div>
+<p>A confident miss is expensive: 90% and wrong costs 0.81, nine times what a 70% miss costs over a 70% hit.</p>
+</section>
+<section class="r-sec" id="misses">
+<h3>Confident misses: Brier vs log loss</h3>
+<p>The second grade is <b>log loss</b>: minus the log of the chance we gave to what actually happened. Both scores agree on the easy cases.
+They part ways on confident misses: Brier never goes above 1, but log loss keeps climbing as the chance goes to zero.</p>
+<figure class="r-fig"><svg class="r-chart" data-pen-chart="50 348 204 12 5" viewBox="0 0 360 240" role="img" aria-label="Penalty for one forecast: log loss climbs without limit as the chance given to what happened goes to zero; Brier never passes 1"><line class="g" x1="50" x2="348" y1="204.0" y2="204.0"/><text x="44" y="208.0" text-anchor="end">0</text><line class="g" x1="50" x2="348" y1="165.6" y2="165.6"/><text x="44" y="169.6" text-anchor="end">1</text><line class="g" x1="50" x2="348" y1="127.2" y2="127.2"/><text x="44" y="131.2" text-anchor="end">2</text><line class="g" x1="50" x2="348" y1="88.8" y2="88.8"/><text x="44" y="92.8" text-anchor="end">3</text><line class="g" x1="50" x2="348" y1="50.4" y2="50.4"/><text x="44" y="54.4" text-anchor="end">4</text><line class="g" x1="50" x2="348" y1="12.0" y2="12.0"/><text x="44" y="16.0" text-anchor="end">5</text><text x="50.0" y="220" text-anchor="middle">0</text><text x="109.6" y="220" text-anchor="middle">0.2</text><text x="169.2" y="220" text-anchor="middle">0.4</text><text x="228.8" y="220" text-anchor="middle">0.6</text><text x="288.4" y="220" text-anchor="middle">0.8</text><text x="348.0" y="220" text-anchor="middle">1</text><line class="ax" x1="50" x2="348" y1="204" y2="204"/><line class="ax" x1="50" x2="50" y1="12" y2="204"/><text x="199.0" y="236" text-anchor="middle">Chance given to what happened</text><text transform="translate(11 108.0) rotate(-90)" text-anchor="middle">Penalty</text><polyline class="c-bad" points="53.0,27.2 54.5,42.7 56.0,53.8 57.5,62.3 58.9,69.3 60.4,75.3 61.9,80.4 63.4,84.9 64.9,89.0 66.4,92.6 67.9,96.0 69.4,99.0 70.9,101.9 72.3,104.5 73.8,107.0 75.3,109.3 76.8,111.5 78.3,113.6 79.8,115.6 81.3,117.5 82.8,119.2 84.3,120.9 85.8,122.6 87.2,124.1 88.7,125.7 90.2,127.1 91.7,128.5 93.2,129.8 94.7,131.2 96.2,132.4 97.7,133.6 99.2,134.8 100.7,136.0 102.2,137.1 103.6,138.2 105.1,139.2 106.6,140.2 108.1,141.2 109.6,142.2 111.1,143.1 112.6,144.1 114.1,145.0 115.6,145.9 117.0,146.7 118.5,147.6 120.0,148.4 121.5,149.2 123.0,150.0 124.5,150.8 126.0,151.5 127.5,152.3 129.0,153.0 130.5,153.7 131.9,154.4 133.4,155.1 134.9,155.8 136.4,156.5 137.9,157.1 139.4,157.8 140.9,158.4 142.4,159.0 143.9,159.6 145.4,160.2 146.9,160.8 148.3,161.4 149.8,162.0 151.3,162.6 152.8,163.1 154.3,163.7 155.8,164.2 157.3,164.8 158.8,165.3 160.3,165.8 161.8,166.3 163.2,166.8 164.7,167.3 166.2,167.8 167.7,168.3 169.2,168.8 170.7,169.3 172.2,169.8 173.7,170.2 175.2,170.7 176.6,171.1 178.1,171.6 179.6,172.0 181.1,172.5 182.6,172.9 184.1,173.3 185.6,173.8 187.1,174.2 188.6,174.6 190.1,175.0 191.5,175.4 193.0,175.8 194.5,176.2 196.0,176.6 197.5,177.0 199.0,177.4 200.5,177.8 202.0,178.1 203.5,178.5 205.0,178.9 206.5,179.3 207.9,179.6 209.4,180.0 210.9,180.3 212.4,180.7 213.9,181.0 215.4,181.4 216.9,181.7 218.4,182.1 219.9,182.4 221.3,182.8 222.8,183.1 224.3,183.4 225.8,183.7 227.3,184.1 228.8,184.4 230.3,184.7 231.8,185.0 233.3,185.3 234.8,185.6 236.2,186.0 237.7,186.3 239.2,186.6 240.7,186.9 242.2,187.2 243.7,187.5 245.2,187.8 246.7,188.0 248.2,188.3 249.7,188.6 251.2,188.9 252.6,189.2 254.1,189.5 255.6,189.8 257.1,190.0 258.6,190.3 260.1,190.6 261.6,190.8 263.1,191.1 264.6,191.4 266.0,191.7 267.5,191.9 269.0,192.2 270.5,192.4 272.0,192.7 273.5,193.0 275.0,193.2 276.5,193.5 278.0,193.7 279.5,194.0 281.0,194.2 282.4,194.5 283.9,194.7 285.4,194.9 286.9,195.2 288.4,195.4 289.9,195.7 291.4,195.9 292.9,196.1 294.4,196.4 295.9,196.6 297.3,196.8 298.8,197.1 300.3,197.3 301.8,197.5 303.3,197.8 304.8,198.0 306.3,198.2 307.8,198.4 309.3,198.7 310.8,198.9 312.2,199.1 313.7,199.3 315.2,199.5 316.7,199.7 318.2,200.0 319.7,200.2 321.2,200.4 322.7,200.6 324.2,200.8 325.7,201.0 327.1,201.2 328.6,201.4 330.1,201.6 331.6,201.8 333.1,202.0 334.6,202.2 336.1,202.4 337.6,202.6 339.1,202.8 340.6,203.0 342.0,203.2 343.5,203.4 345.0,203.6 346.5,203.8 348.0,204.0"/><polyline class="c-acc" points="50.0,165.6 53.0,166.4 54.5,166.7 56.0,167.1 57.5,167.5 58.9,167.9 60.4,168.2 61.9,168.6 63.4,169.0 64.9,169.3 66.4,169.7 67.9,170.1 69.4,170.4 70.9,170.8 72.3,171.1 73.8,171.5 75.3,171.9 76.8,172.2 78.3,172.5 79.8,172.9 81.3,173.2 82.8,173.6 84.3,173.9 85.8,174.3 87.2,174.6 88.7,174.9 90.2,175.3 91.7,175.6 93.2,175.9 94.7,176.3 96.2,176.6 97.7,176.9 99.2,177.2 100.7,177.5 102.2,177.9 103.6,178.2 105.1,178.5 106.6,178.8 108.1,179.1 109.6,179.4 111.1,179.7 112.6,180.0 114.1,180.3 115.6,180.6 117.0,180.9 118.5,181.2 120.0,181.5 121.5,181.8 123.0,182.1 124.5,182.4 126.0,182.7 127.5,183.0 129.0,183.3 130.5,183.5 131.9,183.8 133.4,184.1 134.9,184.4 136.4,184.6 137.9,184.9 139.4,185.2 140.9,185.5 142.4,185.7 143.9,186.0 145.4,186.2 146.9,186.5 148.3,186.8 149.8,187.0 151.3,187.3 152.8,187.5 154.3,187.8 155.8,188.0 157.3,188.3 158.8,188.5 160.3,188.8 161.8,189.0 163.2,189.2 164.7,189.5 166.2,189.7 167.7,189.9 169.2,190.2 170.7,190.4 172.2,190.6 173.7,190.9 175.2,191.1 176.6,191.3 178.1,191.5 179.6,191.7 181.1,192.0 182.6,192.2 184.1,192.4 185.6,192.6 187.1,192.8 188.6,193.0 190.1,193.2 191.5,193.4 193.0,193.6 194.5,193.8 196.0,194.0 197.5,194.2 199.0,194.4 200.5,194.6 202.0,194.8 203.5,195.0 205.0,195.2 206.5,195.3 207.9,195.5 209.4,195.7 210.9,195.9 212.4,196.1 213.9,196.2 215.4,196.4 216.9,196.6 218.4,196.7 219.9,196.9 221.3,197.1 222.8,197.2 224.3,197.4 225.8,197.5 227.3,197.7 228.8,197.9 230.3,198.0 231.8,198.2 233.3,198.3 234.8,198.5 236.2,198.6 237.7,198.7 239.2,198.9 240.7,199.0 242.2,199.2 243.7,199.3 245.2,199.4 246.7,199.6 248.2,199.7 249.7,199.8 251.2,199.9 252.6,200.1 254.1,200.2 255.6,200.3 257.1,200.4 258.6,200.5 260.1,200.7 261.6,200.8 263.1,200.9 264.6,201.0 266.0,201.1 267.5,201.2 269.0,201.3 270.5,201.4 272.0,201.5 273.5,201.6 275.0,201.7 276.5,201.8 278.0,201.9 279.5,202.0 281.0,202.1 282.4,202.1 283.9,202.2 285.4,202.3 286.9,202.4 288.4,202.5 289.9,202.5 291.4,202.6 292.9,202.7 294.4,202.8 295.9,202.8 297.3,202.9 298.8,203.0 300.3,203.0 301.8,203.1 303.3,203.1 304.8,203.2 306.3,203.2 307.8,203.3 309.3,203.4 310.8,203.4 312.2,203.4 313.7,203.5 315.2,203.5 316.7,203.6 318.2,203.6 319.7,203.7 321.2,203.7 322.7,203.7 324.2,203.8 325.7,203.8 327.1,203.8 328.6,203.8 330.1,203.9 331.6,203.9 333.1,203.9 334.6,203.9 336.1,203.9 337.6,204.0 339.1,204.0 340.6,204.0 342.0,204.0 343.5,204.0 345.0,204.0 346.5,204.0 348.0,204.0"/><line class="pen-at" data-pen="at" x1="79.8" x2="79.8" y1="12" y2="204"/><circle class="d-bad" data-pen="ll" cx="79.8" cy="115.6" r="4"/><circle class="d-acc" data-pen="br" cx="79.8" cy="172.9" r="4"/><text class="t-bad" data-pen="ll" x="184.1" y="35.0">log loss: −ln(p) = 2.30</text><text class="t-acc" data-pen="br" x="184.1" y="56.2">Brier: (1 − p)² = 0.81</text></svg><figcaption>The penalty for one forecast, drawn from the two formulas. Move the slider to slide the dots along the curves: at 10% (a 90% call that missed) Brier charges 0.81, log loss 2.30.</figcaption></figure>
+<div class="r-slider" data-penalty><label for="r-pen">Chance given to what happened</label>
+  <input id="r-pen" type="range" min="1" max="99" value="10"><output for="r-pen">10% → Brier 0.81, log loss 2.30</output></div>
+<div class="term py" data-py>
+  <div class="term-bar" aria-hidden="true"><i></i><i></i><i></i><span>Python, editable</span></div>
+  <textarea class="py-code" data-py-code spellcheck="false" rows="9" aria-label="Python code">{% raw %}import math
+
+# The chance the forecast gave to what actually happened
+print("chance   Brier  log loss")
+for p in [0.99, 0.9, 0.7, 0.5, 0.3, 0.1, 0.01]:
+    brier = (1 - p) ** 2
+    logloss = -math.log(p)
+    print(f"{p:&gt;5.0%}   {brier:5.2f}  {logloss:8.2f}  " + "#" * round(logloss * 4)){% endraw %}</textarea>
+  <div class="py-run"><button type="button" class="term-play" data-py-run hidden>Run</button></div>
+  <pre class="term-out py-out" data-py-out>{% raw %}chance   Brier  log loss
+  99%    0.00      0.01  
+  90%    0.01      0.11  
+  70%    0.09      0.36  #
+  50%    0.25      0.69  ###
+  30%    0.49      1.20  #####
+  10%    0.81      2.30  #########
+   1%    0.98      4.61  ##################{% endraw %}</pre>
+</div>
+<div class="scroll"><table>
+<thead><tr><th class="l"></th><th class="l">Brier</th><th class="l">Log loss</th></tr></thead><tbody>
+<tr><td class="l">A coin flip scores</td><td class="l">0.25</td><td class="l">0.693</td></tr>
+<tr><td class="l">Worst single forecast</td><td class="l">1</td><td class="l">No limit</td></tr>
+<tr><td class="l">A confident miss is</td><td class="l">Punished</td><td class="l">Punished hard</td></tr>
+<tr><td class="l">Best at catching</td><td class="l">Overall error</td><td class="l">Rare upsets priced too low</td></tr>
+</tbody></table></div>
+<p>We report both, because they can rank two forecasts differently. Log loss matters most to a market maker: if a long shot we price at 1% really wins
+1 time in 20, takers will keep buying it from us.</p>
+</section>
+<section class="r-sec" id="calibration">
+<h3>Honest and sharp</h3>
+<p>A Brier score splits into three parts:</p>
+<p class="r-formula">Brier = Reliability − Resolution + Uncertainty</p>
+<ul>
+  <li><b>Reliability</b> (lower is better): do the drivers we price at 20% win about 20% of the time? This is <b>calibration</b>, and it's what
+    a market maker needs most, because a price that's wrong in a steady direction gets traded against.</li>
+  <li><b>Resolution</b> (higher is better): do our prices move away from the average when they should? Giving all 20 cars 5% is perfectly honest
+    and perfectly useless. Being calibrated isn't enough; a forecast has to take a stand.</li>
+  <li><b>Uncertainty</b>: how hard the races are to call. Not up to us: for a race winner with 20 cars it's 0.0475, the score of giving everyone 1 in 20.</li>
+</ul>
+<p>To check reliability we group our prices into bands and count how often those drivers won. Here are our 2025 race-win prices:</p>
+<figure class="r-fig"><svg class="r-chart" viewBox="0 0 360 240" role="img" aria-label="Reliability of our 2025 race-win prices, off and calibrated, against the diagonal where a price matches how often it wins"><line class="g" x1="50" x2="348" y1="204.0" y2="204.0"/><text x="44" y="208.0" text-anchor="end">0%</text><line class="g" x1="50" x2="348" y1="172.0" y2="172.0"/><text x="44" y="176.0" text-anchor="end">10%</text><line class="g" x1="50" x2="348" y1="140.0" y2="140.0"/><text x="44" y="144.0" text-anchor="end">20%</text><line class="g" x1="50" x2="348" y1="108.0" y2="108.0"/><text x="44" y="112.0" text-anchor="end">30%</text><line class="g" x1="50" x2="348" y1="76.0" y2="76.0"/><text x="44" y="80.0" text-anchor="end">40%</text><line class="g" x1="50" x2="348" y1="44.0" y2="44.0"/><text x="44" y="48.0" text-anchor="end">50%</text><line class="g" x1="50" x2="348" y1="12.0" y2="12.0"/><text x="44" y="16.0" text-anchor="end">60%</text><text x="50.0" y="220" text-anchor="middle">0%</text><text x="99.7" y="220" text-anchor="middle">10%</text><text x="149.3" y="220" text-anchor="middle">20%</text><text x="199.0" y="220" text-anchor="middle">30%</text><text x="248.7" y="220" text-anchor="middle">40%</text><text x="298.3" y="220" text-anchor="middle">50%</text><text x="348.0" y="220" text-anchor="middle">60%</text><line class="ax" x1="50" x2="348" y1="204" y2="204"/><line class="ax" x1="50" x2="50" y1="12" y2="204"/><text x="199.0" y="236" text-anchor="middle">Our price (middle of each band)</text><text transform="translate(11 108.0) rotate(-90)" text-anchor="middle">How often they won</text><line class="diag" x1="50.0" y1="204.0" x2="348.0" y2="12.0"/><polyline class="c-bad" points="87.2,197.6 124.5,141.3 186.6,92.3 261.1,31.8"/><circle class="d-bad" cx="87.2" cy="197.6" r="3.5"/><circle class="d-bad" cx="124.5" cy="141.3" r="3.5"/><circle class="d-bad" cx="186.6" cy="92.3" r="3.5"/><circle class="d-bad" cx="261.1" cy="31.8" r="3.5"/><polyline class="c-acc" points="87.2,194.7 124.5,125.9 186.6,124.6 261.1,72.8"/><circle class="d-acc" cx="87.2" cy="194.7" r="3.5"/><circle class="d-acc" cx="124.5" cy="125.9" r="3.5"/><circle class="d-acc" cx="186.6" cy="124.6" r="3.5"/><circle class="d-acc" cx="261.1" cy="72.8" r="3.5"/><text class="t-bad" x="204.0" y="28.0">off</text><text class="t-acc" x="273.5" y="88.8">calibrated</text><text x="228.8" y="178.4" class="t-mut">on the line = honest</text></svg><figcaption>Reliability of our 2025 race-win prices (<a href="https://github.com/racinglines/racinglines/blob/main/docs/f1-calibration.md">F1 calibration</a>), each band plotted at its middle. Points on the dashed line are honest prices.</figcaption></figure>
+<div class="term py" data-py>
+  <div class="term-bar" aria-hidden="true"><i></i><i></i><i></i><span>Python, editable</span></div>
+  <textarea class="py-code" data-py-code spellcheck="false" rows="12" aria-label="Python code">{% raw %}# Reliability of our 2025 race-win prices (docs/f1-calibration.md):
+# drivers we priced in each band, and how often they won.
+bins = [  # band,     n,   won (off), n,   won (calibrated)
+    ("5-10%",   246, 0.020, 172, 0.029),
+    ("10-20%",  327, 0.196, 201, 0.244),
+    ("20-35%",   86, 0.349, 109, 0.248),
+    ("35-50%",   13, 0.538,  39, 0.410),
+]
+print(f"{'priced':8} {'off: n':&gt;7} {'won':&gt;6}   {'calibrated: n':&gt;13} {'won':&gt;6}")
+for band, n0, w0, n1, w1 in bins:
+    print(f"{band:8} {n0:7d} {w0:6.1%}   {n1:13d} {w1:6.1%}"){% endraw %}</textarea>
+  <div class="py-run"><button type="button" class="term-play" data-py-run hidden>Run</button></div>
+  <pre class="term-out py-out" data-py-out>{% raw %}priced    off: n    won   calibrated: n    won
+5-10%        246   2.0%             172   2.9%
+10-20%       327  19.6%             201  24.4%
+20-35%        86  34.9%             109  24.8%
+35-50%        13  53.8%              39  41.0%{% endraw %}</pre>
+</div>
+<p>Uncorrected (red), the engine was <b>too flat</b>: drivers we priced at 5 to 10% won 2.0% of the time, and the favourites won more often than
+we said. It gave long shots too much and favourites too little. That's a reliability problem, and it's fixable.</p>
+</section>
+<section class="r-sec" id="sharpen">
+<h3>Fixing a flat forecast</h3>
+<p>The fix is one number. Raise every win chance to a power <i>a</i> and rescale so they add up to 100% again: with <i>a</i> above 1, favourites
+gain and long shots shrink, but the order never changes.</p>
+<p class="r-formula">q = p<sup>a</sup> / sum of all p<sup>a</sup></p>
+<div class="term py" data-py>
+  <div class="term-bar" aria-hidden="true"><i></i><i></i><i></i><span>Python, editable</span></div>
+  <textarea class="py-code" data-py-code spellcheck="false" rows="9" aria-label="Python code">{% raw %}# Sharpening a flat forecast: q = p**a / sum(p**a).
+# A made-up six-driver field; a = 2.3 is the after-qualifying
+# power our walk-forward fit uses (docs/f1-roadmap.md, 2026-10-14).
+p = [0.30, 0.25, 0.20, 0.12, 0.08, 0.05]
+for a in [1.0, 1.5, 2.3]:
+    total = sum(x ** a for x in p)
+    q = [x ** a / total for x in p]
+    print(f"a = {a}:", " ".join(f"{x:5.1%}" for x in q)){% endraw %}</textarea>
+  <div class="py-run"><button type="button" class="term-play" data-py-run hidden>Run</button></div>
+  <pre class="term-out py-out" data-py-out>{% raw %}a = 1.0: 30.0% 25.0% 20.0% 12.0%  8.0%  5.0%
+a = 1.5: 36.2% 27.5% 19.7%  9.2%  5.0%  2.5%
+a = 2.3: 44.7% 29.4% 17.6%  5.4%  2.1%  0.7%{% endraw %}</pre>
+</div>
+<p>The power is fitted race by race on earlier races only, so a backtest never uses a result to fix the race it came from. Each simulated race is then
+re-weighted to match, so the podium, top-10 and head-to-head prices move with the win price and stay consistent with it.
+It worked on the win prices (blue in the chart above): 2025 log loss went from 0.1694 to 0.1627, and 2026 from 0.2244 to 0.2194. It didn't fix every band:
+10 to 20% is still priced too low, and 20 to 35% is now priced too high.</p>
+<p class="note">The calibration is <b>off by default</b>. The engine's settings and the method were chosen with these seasons in view, so only races after
+14 October 2026 are a clean test. Turning it on for good is the owner's call.</p>
+</section>
+<section class="r-sec" id="scorecard">
+<h3>Our scorecard</h3>
+<p>The F1 engine against two simple guesses, after qualifying: the <b>grid-only guess</b> (how often each grid slot has won, podiumed or scored
+points in earlier races) and the <b>uniform</b> guess (everyone gets the same chance). Skill is the share of the uniform guess's error the forecast removes.</p>
+<div class="term py" data-py>
+  <div class="term-bar" aria-hidden="true"><i></i><i></i><i></i><span>Python, editable</span></div>
+  <textarea class="py-code" data-py-code spellcheck="false" rows="17" aria-label="Python code">{% raw %}# Our F1 scorecard, after qualifying (docs/f1-evaluation.md, run 955).
+# Brier, lower is better. "skill" = how much of the uniform guess's
+# error the forecast removes: 1 - ours / uniform.
+rows = {             # ours,   grid-only, uniform (everyone 1/n)
+    "Win":          (0.0307, 0.0309, 0.0471),
+    "Podium":       (0.0692, 0.0708, 0.1265),
+    "Top 10":       (0.150,  0.163,  0.250),
+}
+print(f"{'market':8} {'ours':&gt;7} {'grid':&gt;7} {'uniform':&gt;8} {'skill':&gt;6}")
+for name, (ours, grid, uniform) in rows.items():
+    skill = 1 - ours / uniform
+    print(f"{name:8} {ours:7.4f} {grid:7.4f} {uniform:8.4f} {skill:6.0%}")
+
+# Teammate head-to-head is a two-way call, so a coin flip is the baseline
+h2h = 0.196
+print(f"{'H2H':8} {h2h:7.4f} {'':&gt;7} {0.25:8.4f} {1 - h2h / 0.25:6.0%}"){% endraw %}</textarea>
+  <div class="py-run"><button type="button" class="term-play" data-py-run hidden>Run</button></div>
+  <pre class="term-out py-out" data-py-out>{% raw %}market      ours    grid  uniform  skill
+Win       0.0307  0.0309   0.0471    35%
+Podium    0.0692  0.0708   0.1265    45%
+Top 10    0.1500  0.1630   0.2500    40%
+H2H       0.1960           0.2500    22%{% endraw %}</pre>
+</div>
+<p>From <a href="https://github.com/racinglines/racinglines/blob/main/docs/f1-evaluation.md">F1 evaluation</a> (run 955, the engine's current setup).
+The engine beats uniform in every season and stage, and every session sharpens it: the average chance it gave the eventual winner rose from 12.1%
+before practice to 27.5% after qualifying, and to 31.0% with the current setup.</p>
+<p>The harder test is the market. On race winners in 2026, our calibrated prices beat Polymarket's log loss (0.2194 against 0.2222). In 2025 the market
+was sharper (0.1439 against our 0.1627). That gap is why the paper-trading season matters.</p>
+<p class="r-credit">The ideas and layout of this part follow the <b>Brier Score Cheat Sheet</b> by @WalrusQuant, from
+<a href="https://bayesratings.com/methodology/">bayesRatings: methodology</a>. The numbers and charts here are our own.</p>
+</section>
+<p class="term-next r-pager"><a href="#engine" data-term-tab="engine">← How the engine works</a><a href="#use" data-term-tab="use">Next: Using the app →</a></p>
+</div>
+<div class="term-partbox" id="use">
+<h2 class="term-part">Using the app</h2>
+<section class="r-sec" id="app">
+<h3>The web app</h3>
+<p>This site, laid out for the fantasy league alpha. Sign up and you get F$1,000 of fantasy money and four tabs; <b>Try the demo</b> shows the same tabs, and can look but not trade. No real money moves, and nothing reaches an exchange.</p>
+<div class="scroll"><table>
+<thead><tr><th class="l">Tab</th><th class="l">What's on it</th></tr></thead><tbody>
+<tr><td class="l"><b>Markets</b></td><td class="l">The prediction markets now, with our fair probabilities next to each venue's prices, for F1, NASCAR and MotoGP</td></tr>
+<tr><td class="l"><b>Trade</b></td><td class="l">Pick an F1 market, see its recorded order book, and buy or sell in F$, one immediate-or-cancel order at a time</td></tr>
+<tr><td class="l"><b>History</b></td><td class="l">Your F$, every trade and order (refused ones with the reason), your strategy's trades, and the leaderboard</td></tr>
+<tr><td class="l"><b>Lab</b></td><td class="l">Follow one of five strategy styles and choose its sizing; its track record and positions; backtests, the Edge Finder and replays</td></tr>
+</tbody></table></div>
+</section>
+<section class="r-sec" id="cli">
+<h3>The command line</h3>
+<p>Everything the site does runs from one command, <code>racinglines</code>, installed with the Python package. The task comes first and the sport second:</p>
+<div class="scroll"><table>
+<thead><tr><th class="l">Command</th><th class="l">What it does</th></tr></thead><tbody>
+<tr><td class="l"><code>racinglines model backtest kart --demo</code></td><td class="l">Prices every past race as of before it, and scores the prices</td></tr>
+<tr><td class="l"><code>racinglines model forecast kart --demo --save</code></td><td class="l">Simulates the rest of the season and the championships</td></tr>
+<tr><td class="l"><code>racinglines live run kart/demo-2026-09 --demo --simulate --no-fetch</code></td><td class="l">Runs a live private book against 100 simulated takers</td></tr>
+</tbody></table></div>
+<p><code>--demo</code> runs the real engine on a made-up Mario Kart season, so you can try it without any race data of your own. Swap <code>kart</code> for
+<code>f1</code>, <code>nascar</code>, <code>motogp</code> or <code>mtb_dh</code> once you have the data. To watch it first, <a href="/docs/quickstart/term">the quickstart replay</a>
+replays the same commands in your browser.</p>
+<p>With a racinglines.bet account the command line also reaches the hosted server: <code>--remote</code> runs the book commands and Lab jobs there,
+<code>racinglines remote</code> calls any tool your account may use, and <code>racinglines data pull f1</code> copies one sport's shared data into your own database.
+It's in testing, and every remote command prints a warning that a review of venue and data terms is still pending.</p>
+</section>
+<section class="r-sec" id="mcp">
+<h3>Claude, through MCP</h3>
+<p><code>racinglines mcp</code> starts an MCP server, which lets Claude (or any other MCP client) work with the same data and simulations as the site and the
+command line. You ask in plain English, and Claude picks the tools:</p>
+<ul>
+  <li>"What did we have for the Baku winner the evening before qualifying, and what did Polymarket say?"</li>
+  <li>"How did the maker do on Kalshi in 2025?"</li>
+  <li>"Replay that with a 3¢ spread."</li>
+</ul>
+<p>There are two ways in. <b>Locally</b>, you run the server on your own machine against your own database. <b>Hosted</b>, you connect Claude to
+racinglines.bet and sign in with your account, and every job it starts is filed under your account. Remote access is still in testing.</p>
+</section>
+<p class="term-next r-pager"><a href="#score" data-term-tab="score">← How we score the engine</a><a href="/">The home page and the demo →</a></p>
+</div>
+</div>
+</div>
+
+{% endblock %}

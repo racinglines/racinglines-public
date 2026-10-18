@@ -1,0 +1,20 @@
+{% extends "base.html" %}{% from "_macros.html" import empty, csrf, page_head %}
+{% block title %}Order log{% endblock %}
+{% block content %}
+{{ page_head("Order log") }}
+{% include "_admin_nav.html" %}
+<div class="card"><h2>Open orders on Polymarket</h2>
+{% if live_error %}<p class="bad">{{ live_error }}</p>{% elif not (trading.enabled and trading.has_key) %}<p class="muted">Live order list needs trading enabled.</p>
+{% elif live %}<div class="scroll"><table><thead><tr><th class="l">id</th><th>side</th><th>price</th><th>original size</th><th>matched</th><th class="l">status</th></tr></thead><tbody>
+{% for o in live %}<tr><td class="l"><code>{{ o.id }}</code></td><td>{{ o.side }}</td><td>{{ o.price }}</td><td>{{ o.original_size }}</td><td>{{ o.size_matched }}</td><td class="l">{{ o.status }}</td></tr>{% endfor %}
+</tbody></table></div>{% else %}{{ empty("No open orders yet.") }}{% endif %}</div>
+<div class="card"><h2>Order log</h2>
+{% if orders %}<div class="scroll"><table><thead><tr><th>id</th><th class="l">created</th><th class="l">market</th><th class="l">outcome</th><th>side</th><th>price</th><th>size</th><th>model</th><th>bid/ask</th><th class="l">status</th><th class="l">exchange id / error</th><th></th></tr></thead><tbody>
+{% for o in orders %}<tr class="{{ 'hl' if highlight == o.id else '' }}">
+<td>{{ o.id }}</td><td class="l">{{ o.created_at|fmt }}</td><td class="l"><a href="/markets/linked/{{ o.market_link_id }}">{{ o.question }}</a></td><td class="l">{{ o.outcome }}</td>
+<td>{{ o.side }}</td><td>{{ o.price }}</td><td>{{ o.size }}</td><td>{{ o.model_prob|fmt("model_prob") }}</td><td>{{ o.best_bid|fmt }} / {{ o.best_ask|fmt }}</td>
+<td class="l {{ 'bad' if o.status in ('error', 'rejected') else ('good' if o.status == 'submitted' else '') }}">{{ o.status }}</td>
+<td class="l"><code>{{ o.exchange_order_id or "" }}</code> {{ o.error or "" }}</td>
+<td>{% if o.status == "submitted" and o.exchange_order_id %}<form class="inline" method="post" action="/orders/{{ o.id }}/cancel">{{ csrf() }}<button class="danger">Cancel</button></form>{% endif %}</td>
+</tr>{% endfor %}</tbody></table></div>{% else %}{{ empty("No orders yet.") }}{% endif %}</div>
+{% endblock %}

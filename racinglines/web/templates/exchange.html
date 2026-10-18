@@ -1,0 +1,44 @@
+{# One page for every venue's linked markets. mode: "pm" (Polymarket), "kalshi", or "schema" (a venue defined as a schema,
+   with taker-fee edges). venue: name, code, url. Only the legend, the edge columns and a few labels differ by mode. #}
+{% extends "base.html" %}{% from "_macros.html" import csrf, new_badge, flash, page_head, edge_cell, source_note %}
+{% set pm = mode == "pm" %}{% set schema = mode not in ("pm", "kalshi") %}{# a schema venue is the default #}
+{% block title %}{{ venue.name }}{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/markets">Markets</a> › {{ venue.name }}</p>
+{% if schema %}{% set sub = "Every " ~ sports|join(" and ") ~ " market listed on " ~ venue.name ~ ", including outcomes we don't price, with the model's fair price beside the quote net of the taker fee" ~ (" (racinglines markets --exchange " ~ venue.code ~ " fair)" if user.role == 'admin' else "") ~ ". Read-only: nothing is traded on " ~ venue.name ~ "." %}
+{% else %}{% set sub = "Every F1 event listed on " ~ venue.name ~ ", including outcomes we don't price. Mirror an event into your book, or open a race from Markets for the full view." ~ ("" if pm else " Read-only: nothing is traded on Kalshi.") %}{% endif %}
+{% call page_head(venue.name ~ " markets" ~ (" · " ~ sport_name if sport else ""), sub) %}
+<form method="post" action="/markets/{{ venue.code }}/sync" class="inline">{{ csrf() }}<button>Refresh from {{ venue.name }}</button></form>{% endcall %}
+{{ flash(msg) }}
+<form method="get" class="toolbar">
+  <label><span>Show</span><select name="show" data-autosubmit><option value="modeled" {% if show == 'modeled' %}selected{% endif %}>markets we price</option><option value="all" {% if show == 'all' %}selected{% endif %}>all {{ "markets" if schema else "F1 markets" }}</option></select></label>
+  <label><span>Include closed</span><select name="closed" data-autosubmit><option value="0">no</option><option value="1" {% if closed %}selected{% endif %}>yes</option></select></label>
+  <label><span>Quote spread (pts)</span><input name="spread_pct" value="{{ '%g'|format(spread_pct) }}" size="3"></label><button>Apply</button>
+{% if sport %}<input type="hidden" name="sport" value="{{ sport }}">{% endif %}
+<span class="links">Last sync {{ synced|fmt }}{% if not pm %} · <a href="/markets/polymarket">Polymarket markets</a>{% endif %}{% if sport %} · <a href="/markets/{{ venue.code }}?show={{ show }}&closed={{ closed }}">every sport</a>{% endif %}</span></form>
+{% if not pm %}{% include "_recorders.html" %}{% endif %}
+{{ source_note(sport or note_sports, [venue.code], model=true) }}
+{% if schema %}<p class="legend">Edge YES = our fair − ask − fee (buy YES at the ask); edge NO = bid − our fair − fee (buy NO at 1 − bid); the fee is {{ venue.name }}'s taker fee, {{ fee|money }} per contract (unverified against its fee schedule). Call = the side with a positive edge after the fee. A one-sided quote gets an edge on its quoted side only: a book nobody will trade against is not an edge. ⚠ marks gaps over 10 pts: usually a model blind spot rather than an edge; check before quoting.</p>
+{% else %}<p class="legend">Edge = our fair − {{ venue.name }} mid (positive = we think YES is cheap). ⚠ marks gaps over 10 pts: usually a model blind spot rather than an edge; check before quoting.{% if not pm %} Kalshi lists one YES contract per outcome; volume is in contracts ($1 each at settlement).{% endif %}</p>{% endif %}
+{% if not events %}<p class="muted">{% if pm %}No linked markets yet. Refresh from Polymarket.{% elif schema %}No {{ venue.name }} markets linked. Refresh from {{ venue.name }}, or include closed markets.{% else %}No open Kalshi markets linked. Refresh from Kalshi, or include closed markets to see past races.{% endif %}</p>{% endif %}
+{% for ev in events %}
+<details class="card" data-remember="{{ venue.code if not pm else 'pm' }}:{{ ev.slug }}"{% if loop.first %} open{% endif %}>
+  <summary><h2>{{ ev.title }}{% if ev.new %} {{ new_badge(ev.new if ev.new < ev.rows|length else 0) }}{% endif %}</h2><span class="sum">{{ ev.rows|length }} outcomes · {{ ev.modeled }} priced · {% if pm %}{{ ev.volume|money(false, false) }}{% else %}{{ "{:,.0f}".format(ev.volume) }} contracts{% endif %} · ends {{ ev.end_date|fmt }}</span></summary>
+  <p class="muted">{% if pm %}<a href="https://polymarket.com/event/{{ ev.slug }}" target="_blank" rel="noopener">open on Polymarket ↗</a>{% elif schema %}<a href="{{ venue.url }}" target="_blank" rel="noopener">open {{ venue.name }} ↗</a> · <code>{{ ev.slug }}</code>{% else %}<a href="{{ venue.url.format(slug=ev.slug|lower) }}" target="_blank" rel="noopener">open on Kalshi ↗</a> · <code>{{ ev.slug }}</code>{% endif %}</p>
+  <form method="post" action="/markets/{{ venue.code }}/mirror">{{ csrf() }}<input type="hidden" name="event_slug" value="{{ ev.slug }}">
+    <label><span>Spread (pts)</span><input name="spread_pct" value="{{ '%g'|format(spread_pct) }}" size="3"></label>
+    <button class="primary">Mirror into my book</button> <span class="muted">creates / reprices a YES/NO market in my book for every priced outcome</span></form>
+  <div class="scroll" data-rows="15" data-filter="Filter by outcome or kind"><table>
+  <thead><tr><th class="l">Outcome</th><th class="l hide-sm">Kind</th><th class="hide-sm">{{ "PM bid" if pm else "Bid" }}</th><th class="hide-sm">{{ "PM ask" if pm else "Ask" }}</th><th>{{ "PM mid" if pm else "Last" }}</th><th>Our fair</th>{% if schema %}<th>Edge YES</th><th>Edge NO</th><th>Call</th>{% else %}<th>Edge</th>{% endif %}<th class="hide-sm">Quote bid</th><th class="hide-sm">Quote ask</th><th class="hide-sm">Mine</th></tr></thead><tbody>
+  {% for r in ev.rows %}<tr>
+    <td class="l">{{ r.subject }}{% if r.new %} {{ new_badge() }}{% endif %}{% if r.prediction == 'race_h2h' and not schema %} <span class="muted">{% if pm %}vs {{ r.question.split(': ')[-1] }}{% else %}{{ r.question }}{% endif %}</span>{% endif %}</td>
+    <td class="l hide-sm"><span class="muted">{{ r.prediction }}</span></td>
+    <td class="hide-sm">{{ r.last_bid|fmt }}</td><td class="hide-sm">{{ r.last_ask|fmt }}</td><td>{{ "%.3f"|format(r.last_price) if r.last_price is not none else "" }}</td>
+    <td>{{ r.fair|fmt("model_prob") if r.fair is not none else "–" }}</td>
+    {% if schema %}{{ edge_cell(r.edge_yes, good=(r.edge_yes is not none and r.edge_yes > 0), mark=false, warn=false) }}{{ edge_cell(r.edge_no, good=(r.edge_no is not none and r.edge_no > 0), mark=false, warn=false) }}{{ edge_cell(r.edge, label=r.call or "", good=(true if r.call else false)) }}{% else %}{{ edge_cell(r.edge) }}{% endif %}
+    <td class="hide-sm">{{ "%.3f"|format(r.q_bid) if r.q_bid is not none and r.q_bid > 0 else "" }}</td><td class="hide-sm">{{ "%.3f"|format(r.q_ask) if r.q_ask is not none and r.q_ask < 1 else "" }}</td>
+    <td class="hide-sm">{{ "✓" if r.mirrored else "" }}</td></tr>{% endfor %}
+  </tbody></table></div>
+</details>
+{% endfor %}
+{% endblock %}

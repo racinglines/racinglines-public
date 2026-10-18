@@ -1,0 +1,52 @@
+progress 0/1 building history (track features on)
+[1m📊 backtest, track features on[0m
+progress 10/33 2024 R10 rainbow-road
+progress 20/33 2025 R08 mount-wario
+progress 30/33 2026 R06 thwomp-ruins
+progress 33/33 2026 R09 bowser-s-castle
+[3m📊 [0m[1;3mTrack features ON: mean over 32 races[0m[3m                                               [0m
+╭────────┬─────────────┬─────────────┬─────────┬────────┬──────────────────┬──────────╮
+│[1m [0m[1mmarket[0m[1m [0m│[1m [0m[1mstage      [0m[1m [0m│[1m [0m[1mmodel Brier[0m[1m [0m│[1m [0m[1muniform[0m[1m [0m│[1m [0m[1m  grid[0m[1m [0m│[1m [0m[1mskill vs uniform[0m[1m [0m│[1m [0m[1mlog loss[0m[1m [0m│
+├────────┼─────────────┼─────────────┼─────────┼────────┼──────────────────┼──────────┤
+│ win    │[2m [0m[2mpre weekend[0m[2m [0m│      [1;32m0.0431[0m │  0.0475 │      [2m–[0m │   [32m▉          +9%[0m │   0.1518 │
+│        │[2m [0m[2mpre quali  [0m[2m [0m│      [1;32m0.0405[0m │  0.0475 │      [2m–[0m │  [32m█▍         +15%[0m │   0.1388 │
+│        │[2m [0m[2mpre race   [0m[2m [0m│      [1;32m0.0381[0m │  0.0475 │ [32m0.0410[0m │  [32m█▉         +20%[0m │   0.1266 │
+├────────┼─────────────┼─────────────┼─────────┼────────┼──────────────────┼──────────┤
+│ podium │[2m [0m[2mpre weekend[0m[2m [0m│      [1;32m0.0988[0m │  0.1275 │      [2m–[0m │  [32m██▎        +23%[0m │   0.3155 │
+│        │[2m [0m[2mpre quali  [0m[2m [0m│      [1;32m0.0913[0m │  0.1275 │      [2m–[0m │  [32m██▊        +28%[0m │   0.3058 │
+│        │[2m [0m[2mpre race   [0m[2m [0m│      [1;32m0.0772[0m │  0.1275 │ [32m0.0824[0m │  [32m███▉       +39%[0m │   0.2699 │
+├────────┼─────────────┼─────────────┼─────────┼────────┼──────────────────┼──────────┤
+│ top10  │[2m [0m[2mpre weekend[0m[2m [0m│      [1;32m0.1662[0m │  0.2500 │      [2m–[0m │  [32m███▎       +34%[0m │   0.5105 │
+│        │[2m [0m[2mpre quali  [0m[2m [0m│      [1;32m0.1543[0m │  0.2500 │      [2m–[0m │  [32m███▊       +38%[0m │   0.4897 │
+│        │[2m [0m[2mpre race   [0m[2m [0m│      [1;32m0.1295[0m │  0.2500 │ [32m0.1345[0m │  [32m████▊      +48%[0m │   0.4353 │
+╰────────┴─────────────┴─────────────┴─────────┴────────┴──────────────────┴──────────╯
+🏁 favourite won [1m34%[0m of 32 races · rank correlation [1m0.83[0m · mean winner probability [1m22.7%[0m
+   [32mbest call[0m  2024 R04 Royal Raceway: Donkey Kong won at [1m48.6%[0m
+   [33mupset[0m      2024 R08 Mount Wario: Donkey Kong won at [1m1.7%[0m (favourite Peach)
+progress 0/1 building history (track features off)
+[1m📊 backtest, track features off[0m
+progress 10/33 2024 R10 rainbow-road
+progress 20/33 2025 R08 mount-wario
+progress 30/33 2026 R06 thwomp-ruins
+progress 33/33 2026 R09 bowser-s-castle
+[3m📊 [0m[1;3mTrack features OFF: mean over 32 races[0m[3m                                              [0m
+╭────────┬─────────────┬─────────────┬─────────┬────────┬──────────────────┬──────────╮
+│[1m [0m[1mmarket[0m[1m [0m│[1m [0m[1mstage      [0m[1m [0m│[1m [0m[1mmodel Brier[0m[1m [0m│[1m [0m[1muniform[0m[1m [0m│[1m [0m[1m  grid[0m[1m [0m│[1m [0m[1mskill vs uniform[0m[1m [0m│[1m [0m[1mlog loss[0m[1m [0m│
+├────────┼─────────────┼─────────────┼─────────┼────────┼──────────────────┼──────────┤
+│ win    │[2m [0m[2mpre weekend[0m[2m [0m│      [1;32m0.0437[0m │  0.0475 │      [2m–[0m │   [32m▊          +8%[0m │   0.1629 │
+│        │[2m [0m[2mpre quali  [0m[2m [0m│      [1;32m0.0407[0m │  0.0475 │      [2m–[0m │  [32m█▍         +14%[0m │   0.1391 │
+│        │[2m [0m[2mpre race   [0m[2m [0m│      [1;32m0.0377[0m │  0.0475 │ [32m0.0410[0m │  [32m██         +21%[0m │   0.1240 │
+├────────┼─────────────┼─────────────┼─────────┼────────┼──────────────────┼──────────┤
+│ podium │[2m [0m[2mpre weekend[0m[2m [0m│      [1;32m0.1033[0m │  0.1275 │      [2m–[0m │  [32m█▉         +19%[0m │   0.3356 │
+│        │[2m [0m[2mpre quali  [0m[2m [0m│      [1;32m0.0915[0m │  0.1275 │      [2m–[0m │  [32m██▊        +28%[0m │   0.3104 │
+│        │[2m [0m[2mpre race   [0m[2m [0m│      [1;32m0.0768[0m │  0.1275 │ [32m0.0824[0m │  [32m███▉       +40%[0m │   0.2650 │
+├────────┼─────────────┼─────────────┼─────────┼────────┼──────────────────┼──────────┤
+│ top10  │[2m [0m[2mpre weekend[0m[2m [0m│      [1;32m0.1879[0m │  0.2500 │      [2m–[0m │  [32m██▍        +25%[0m │   0.5659 │
+│        │[2m [0m[2mpre quali  [0m[2m [0m│      [1;32m0.1573[0m │  0.2500 │      [2m–[0m │  [32m███▋       +37%[0m │   0.4944 │
+│        │[2m [0m[2mpre race   [0m[2m [0m│      [1;32m0.1296[0m │  0.2500 │ [32m0.1345[0m │  [32m████▊      +48%[0m │   0.4326 │
+╰────────┴─────────────┴─────────────┴─────────┴────────┴──────────────────┴──────────╯
+🏁 favourite won [1m38%[0m of 32 races · rank correlation [1m0.83[0m · mean winner probability [1m23.1%[0m
+   [32mbest call[0m  2024 R04 Royal Raceway: Donkey Kong won at [1m52.3%[0m
+   [33mupset[0m      2024 R08 Mount Wario: Donkey Kong won at [1m1.6%[0m (favourite Peach)
+
+Per-race rows -> data/demo/kart/runs/f1/backtests/backtest_20261012_0427.csv

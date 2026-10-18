@@ -1,0 +1,134 @@
+{% from "_macros.html" import pnl_cls %}
+<div id="edge-root" data-combos='{{ combos|tojson }}'>
+<h2>Edge Finder <span class="tabs inline-tabs" role="group" aria-label="Season">{% for y in years %}<button type="button" hx-post="/lab/edge" hx-disabled-elt="this" hx-target="#edge" hx-swap="innerHTML" hx-vals='{"action": "year", "year": "{{ y }}"}' aria-pressed="{{ 'true' if y == year else 'false' }}">{{ y }}</button>{% endfor %}</span>
+{%- for name, opts, cur, label, names in [("sport", sports, sport, "Sport", sport_names), ("venue", venues, venue, "Venue", venue_names)] if opts|length > 1 or (cur and cur != "f1") %}
+ <span class="tabs inline-tabs" role="group" aria-label="{{ label }}">{% if name == "venue" %}<button type="button" hx-post="/lab/edge" hx-disabled-elt="this" hx-target="#edge" hx-swap="innerHTML" hx-vals='{"action": "scope", "venue": ""}' aria-pressed="{{ 'true' if not cur else 'false' }}">all venues</button>{% endif %}{% for o in opts %}<button type="button" hx-post="/lab/edge" hx-disabled-elt="this" hx-target="#edge" hx-swap="innerHTML" hx-vals='{"action": "scope", "{{ name }}": "{{ o }}"}' aria-pressed="{{ 'true' if o == cur else 'false' }}">{{ names.get(o, o) }}</button>{% endfor %}</span>
+{%- endfor %}</h2>
+<p class="sub">{% if year == 2026 %}Every 2026 weekend raced so far ({{ ef.n_weekends }}){% else %}The 2025 season ({{ ef.n_weekends }} weekends), as if we had been live from its first race: every price uses only data from before that moment{% endif %}, re-priced at the sport's saved stages, traded on {{ venue_names.get(venue, venue) if venue else "each venue" }}'s recorded prices and trades, and settled on the result. This view only reads saved sweeps. {% if sweep_job %}To generate another setup, run a <a href="/lab?job={{ sweep_job }}#run">strategy sweep</a>;{% else %}No strategy-sweep form is wired for this sport yet;{% endif %} add its results here or compare them with <a href="#models" data-open="models">F1 model variants</a>, <a href="#backtests" data-open="backtests">model backtests</a> and <a href="#jobs" data-open="jobs">job status</a>.</p>
+
+<form class="edge-add jobform" hx-disabled-elt="find button" hx-post="/lab/edge" hx-target="#edge" hx-swap="innerHTML" hx-include="this">
+  <label><span>Configuration</span><select name="variant">{% for ref, lab in models %}<option value="{{ ref }}">{{ lab }}</option>{% endfor %}</select></label>
+  <label><span>Strategy</span><select name="strategy">{% for k, lab in strategies %}<option value="{{ k }}">{{ lab }}</option>{% endfor %}</select></label>
+  <button type="button" class="primary" hx-vals='{"action": "add"}'>Add combo</button>
+  <button type="button" hx-vals='{"action": "add_model"}' title="This configuration with every strategy already shown">Add configuration</button>
+  <button type="button" hx-vals='{"action": "add_strategy"}' title="This strategy with every configuration already shown">Add strategy</button>
+  <button type="button" hx-vals='{"action": "reset"}' hx-include="unset" title="Baseline, every strategy">Reset</button>
+  <button type="button" hx-vals='{"action": "clear"}' hx-include="unset">Clear</button>
+</form>
+
+{% if not ef.cards and not ef.missing and not ef.benchmark %}<p class="muted">No full-season sweep saved for {{ year }}{% if sweep_job %}: <a href="/lab?job={{ sweep_job }}#run">run a strategy sweep</a>{% else %} for this sport yet{% endif %}.</p>{% endif %}
+<div class="kpis">{% set b = ef.benchmark %}{% if b %}<div class="kpi bench" title="Pinned: every combo is compared with it. Always the default-settings baseline sweep, so other configurations never replace it.">
+<div class="l">Benchmark · {{ b.label }}</div><div class="l muted"><a href="/lab/runs/{{ b.run_id }}">baseline, run #{{ b.run_id }}</a></div>
+<div class="v {{ pnl_cls(b.pnl) }}">{{ b.pnl|money(true) }}</div><div class="s">on {{ b.volume|money(false, false) }} filled · {{ b.up }}/{{ b.weekends }} weekends up · pinned</div></div>{% endif %}{% for c in ef.cards %}
+<div class="kpi{{ ' best' if c.best }}"><button type="button" class="x" hx-post="/lab/edge" hx-disabled-elt="this" hx-target="#edge" hx-swap="innerHTML" hx-vals='{"action": "remove", "variant": {{ c.ref|tojson }}, "strategy": {{ c.strategy|tojson }}}' title="Remove from Edge Finder" aria-label="Remove {{ c.label }} · {{ c.name }}">×</button>
+{% if sport == "f1" %}<button type="button" class="star" data-cand="add" data-variant="{{ c.ref }}" data-strategy="{{ c.strategy }}" title="Make this a Lab candidate (load it in the sweep form and tweak it)" aria-label="Make {{ c.label }} · {{ c.name }} a candidate">★</button>{% endif %}
+<div class="l">{{ c.label }}{{ " *" if c.in_sample }}</div><div class="l muted"><a href="/lab/runs/{{ c.run_id }}" title="{{ c.name }}">{{ c.name|truncate(46) }}</a></div>
+<div class="v {{ pnl_cls(c.pnl) }}">{{ c.pnl|money(true) }}</div><div class="s">on {{ c.volume|money(false, false) }} {{ c.volume_label }} · {{ c.up }}/{{ c.weekends }} weekends up{% if c.clv and c.clv.decided and c.clv.mean_clv_pct is not none %} · <span class="{{ pnl_cls(c.clv.mean_clv_pct) }}" title="Closing-line value: the exchange's price when the market closed against the price paid, mean over {{ c.clv.decided }} decided bets; {{ '%.0f%%'|format(c.clv.positive_share * 100) }} beat the close">CLV {{ '%+.1f%%'|format(c.clv.mean_clv_pct * 100) }}</span>{% endif %}{% if c.vs_base is not none %} · <span class="{{ pnl_cls(c.vs_base) }}">{{ c.vs_base|money(true) }}</span> vs baseline{% if not c.same_data %}<span title="The baseline wasn't priced from exactly the same data as this run"> †</span>{% endif %}{% endif %}{% if c.vs_bench is not none %} · <span class="{{ 'good' if c.vs_bench > 0 else 'bad' }}">{{ c.vs_bench|money(true) }}</span> vs benchmark{% endif %}</div></div>{% endfor %}</div>
+{% if ef.missing %}<p class="legend">No full-season {{ year }} run yet for: {% for m in ef.missing %}<b>{{ m.name }}</b> · {{ m.label }}{{ ", " if not loop.last }}{% endfor %}. {% if sweep_job %}<a href="/lab?job={{ sweep_job }}&amp;{{ 'variant=' ~ (ef.missing[0].ref|urlencode) if not ef.missing[0].ref.startswith('cfg:') else 'cfg=' ~ ef.missing[0].ref }}#run">Run a strategy sweep →</a>{% endif %}</p>{% endif %}
+{% if ef.cards|selectattr("in_sample")|list %}<p class="legend">* In-sample: the stage-aware rule was drawn from the 2026 sweep.{% if ef.cards|rejectattr("same_data")|selectattr("vs_base")|list %} † baseline priced from different data (e.g. before a data backfill).{% endif %}</p>{% endif %}
+
+{% if ef.recaps %}
+<h3>Full-season recap</h3>
+<div class="scroll"><table class="recap"><thead><tr><th class="l">Strategy</th><th class="l hide-sm">Configuration</th><th>P&amp;L</th><th class="hide-sm">Volume</th><th>Return on volume</th><th>Weekends up</th><th class="hide-sm">Avg weekend</th><th class="hide-sm">Weekend s.d.</th><th class="hide-sm">Best</th><th class="hide-sm">Worst</th><th>Max drawdown</th><th title="mean weekend P&L / its s.d. x sqrt(weekends): above ~2 is unlikely to be luck">Consistency</th><th class="hide-sm">Fills</th><th class="hide-sm" title="average 60-min markout per fill: negative = adverse selection">Markout 60m</th><th>vs baseline</th></tr></thead><tbody>
+{% for r in ef.recaps %}<tr class="{{ 'muted-row' if r.is_bench }}"><td class="l">{{ r.label }}{{ " *" if r.in_sample }}{{ " (benchmark)" if r.is_bench }}</td><td class="l hide-sm" title="{{ r.name }}">{{ r.name|truncate(40) }}</td>
+<td class="{{ pnl_cls(r.pnl) }}">{{ r.pnl|money(true) }}</td><td class="hide-sm">{{ r.volume|money(false, false) }}</td>
+<td>{{ "%+.1f%%"|format(r.roi * 100) if r.roi is not none }}</td><td>{{ r.up }}/{{ r.weekends }}</td>
+<td class="hide-sm">{{ r.avg|money(true) if r.avg is not none }}</td><td class="hide-sm">{{ r.sd|money if r.sd == r.sd and r.sd is not none }}</td>
+<td class="hide-sm">{{ r.best|money(true) if r.best is not none }}</td><td class="hide-sm">{{ r.worst|money(true) if r.worst is not none }}</td><td>{{ r.drawdown|money(true) }}</td>
+<td class="{{ 'good' if r.consistency and r.consistency >= 2 }}">{{ "%.2f"|format(r.consistency) if r.consistency is not none }}</td>
+<td class="hide-sm">{{ r.fills if r.fills is not none }}</td><td class="hide-sm">{{ "%+.3f"|format(r.markout) if r.markout is not none }}</td>
+<td>{% if r.vs_base is not none %}<span class="{{ pnl_cls(r.vs_base) }}">{{ r.vs_base|money(true) }}</span>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>
+<p class="legend">Sorted by P&amp;L. Drawdown: the worst fall from a running peak across the season, weekend by weekend. Consistency: how many standard errors the average weekend is above zero ({{ ef.n_weekends }} weekends is a small sample; 2+ is a good sign, not proof).</p>
+{% endif %}
+
+{% if candidates %}
+<details class="fold"><summary><b>Candidates ({{ candidates|length }})</b> <span class="muted">named setups: load one into the sweep form, tweak it, re-run</span></summary>
+<div class="scroll"><table><thead><tr><th class="l">Name</th><th class="l">Strategy</th><th class="l">Configuration</th><th>Season</th><th class="l">Why</th><th class="l">From</th><th></th></tr></thead><tbody>
+{% for cd in candidates %}<tr><td class="l"><b>{{ cd.name }}</b></td><td class="l">{{ cd.strategy_label }}</td><td class="l" title="{{ cd.label }}">{{ cd.label|truncate(50) }}</td><td>{{ cd.year }}</td>
+<td class="l wrap wide">{{ cd.why }}</td><td class="l muted">{{ cd.source }}{% if cd.run_id %} · <a href="/lab/runs/{{ cd.run_id }}">run #{{ cd.run_id }}</a>{% endif %}</td>
+<td class="l"><a class="edge-btn" href="/lab?candidate={{ cd.id }}#run">Load in Lab</a> <button type="button" class="edge-btn" hx-post="/lab/edge" hx-disabled-elt="this" hx-target="#edge" hx-swap="innerHTML" hx-vals='{"action": "add", "variant": {{ cd.ref|tojson }}, "strategy": {{ cd.strategy|tojson }}}'>Show</button> <button type="button" class="edge-btn" hx-post="/lab/candidate" hx-disabled-elt="this" hx-target="#edge" hx-swap="innerHTML" hx-confirm="Delete this candidate?" hx-vals='{"action": "delete", "id": "{{ cd.id }}"}' title="Delete candidate">×</button></td></tr>{% endfor %}
+</tbody></table></div>
+</details>
+{% endif %}
+
+{% if ef.columns %}
+<h3>By weekend</h3>
+<div class="scroll"><table><thead><tr><th class="l">Weekend</th><th class="l">Format</th>{% for c in ef.columns %}<th>{{ c.label }}<br><span class="muted" title="{{ c.name }}">{{ c.name|truncate(30) }}</span></th>{% endfor %}<th></th></tr></thead><tbody>
+{% for w in ef.weekends %}<tr><td class="l">{{ w.event }} <span class="muted">{{ w.event_key }}</span></td><td class="l">{{ (w.format or "")|replace('_', ' ') }}</td>
+{% for x in w.cells %}<td class="{{ pnl_cls(x) }}">{{ x|money(true) if x is not none }}</td>{% endfor %}
+<td>{% if w.last_run_id %}<a href="/lab/diagnostics/{{ w.last_run_id }}">weekend →</a>{% endif %}</td></tr>{% endfor %}
+<tr class="total"><td class="l"><b>Season</b></td><td></td>{% for t in ef.totals %}<td class="{{ pnl_cls(t) }}"><b>{{ t|money(true) }}</b></td>{% endfor %}<td></td></tr>
+</tbody></table></div>
+{% endif %}
+
+{% set sweep = ef.detail %}{% if sweep %}{% set m = sweep.metrics %}{% set vn = venue_names.get((sweep.params.settings or {}).get('venue') or 'polymarket', 'Polymarket') %}
+<details><summary><b>Where the edge comes from</b> <span class="muted">({{ ef.detail_name }}, run #{{ sweep.id }}: update &amp; rebuy by stage and market, and model vs {{ vn }})</span></summary>
+<p class="legend">Act when |fair − {{ vn }}| ≥ {{ "%.0f"|format((sweep.params.min_edge or 0) * 100) }} pts, stake ${{ sweep.params.stake_per_edge|int }} × edge (max ${{ sweep.params.max_stake|int }}/market), {{ "%.0f"|format((sweep.params.cost or 0) * 100) }}¢/share trading cost; prices at each stage are {{ vn }}'s at that moment; markets need ≥ ${{ (sweep.params.min_volume_24h or 0)|int }} traded in the prior 24 h and a coherent book.</p>
+<div class="grid"><div><h3>P&amp;L of the decisions made at each stage</h3><div class="scroll"><table><thead><tr><th class="l">Stage</th><th>Trades</th><th>P&amp;L to result</th></tr></thead><tbody>
+{% for r in m.by_stage or [] %}<tr><td class="l">{{ r.stage }}</td><td>{{ r.trades }}</td><td class="{{ pnl_cls(r.pnl) }}">{{ r.pnl|money(true) }}</td></tr>{% endfor %}</tbody></table></div>
+<h3>By market</h3><div class="scroll"><table><thead><tr><th class="l">Market</th><th>Trades</th><th>P&amp;L</th></tr></thead><tbody>
+{% for r in m.by_kind or [] %}<tr><td class="l">{{ r.kind }}</td><td>{{ r.trades }}</td><td class="{{ pnl_cls(r.pnl) }}">{{ r.pnl|money(true) }}</td></tr>{% endfor %}</tbody></table></div></div>
+<div><h3>Model vs {{ vn }} at each stage</h3><div class="scroll"><table><thead><tr><th class="l">Market</th><th class="l">Stage</th><th>Outcomes</th><th>Brier model</th><th>Brier {{ vn }}</th></tr></thead><tbody>
+{% for r in m.scores or [] %}<tr><td class="l">{{ r.kind }}</td><td class="l">{{ r.stage }}</td><td>{{ r.n }}</td><td class="{{ 'good' if r.brier_model < r.brier_market else 'bad' }}">{{ "%.4f"|format(r.brier_model) }}</td><td>{{ "%.4f"|format(r.brier_market) }}</td></tr>{% endfor %}</tbody></table></div>
+<p class="legend">Averaged over weekends, on tradeable markets only. {{ vn }} at the same moment is the benchmark to beat.</p></div></div>
+</details>{% endif %}
+
+{% if demo_pools %}
+<details class="fold mt" id="demo-pool"><summary><b>F1 demo strategy history and pools</b> <span class="muted">what the demo accounts ran, and why</span></summary>
+<p class="legend">These read-only tables show the fixed Polymarket pools behind the demo's historical choices. Phase descriptions explain what the demo ran and why; pool scores come only from saved full-season sweeps. They are backtests, not live trades or a promise of future performance.</p>
+{% for pool in demo_pools %}
+<details class="card" id="demo-{{ pool.username }}-pool">
+<summary><b>{{ pool.name }} · {{ pool.pool_size }} pool combinations</b> <span class="muted">2025 and 2026 saved sweeps</span></summary>
+<p class="legend">{{ pool.description }}</p>
+{% if pool.phases %}
+<h3>Demo phases</h3>
+{% for ph in pool.phases %}
+<p><b>{{ ph.code }} · {{ ph.period }}</b> — {{ ph.name }} ({{ ph.strategy }}, {{ ph.settings }}). {{ ph.why }}</p>
+{% endfor %}
+{% endif %}
+<h3>Check against current saved evidence</h3>
+{% for d in pool.decision_checks %}
+<p><b>{{ d.label }}</b>:
+{% if not d.known %}no weekends had been raced, so the default-start phase is expected.
+{% elif d.table %}the current saved sweeps{% if not d.pool_complete %} are incomplete ({{ d.candidates }} of {{ pool.pool_size }} pool combinations have decision evidence){% endif %} choose <b>{{ d.chosen }}</b>.
+{% else %}there is not enough saved data to make this decision.{% endif %}
+Recorded phase: <b>{{ d.expected_phase.code if d.expected_phase else "–" }}</b>
+({{ d.expected_phase.name if d.expected_phase else "no phase recorded" }}).
+{% if d.history_matches is sameas true %}<span class="good">Matches the recorded phase.</span>
+{% elif d.history_matches is sameas false %}<span class="bad">Does not reproduce the recorded phase; inspect the saved results below.</span>
+{% elif d.known and not d.pool_complete %}<span class="muted">Incomplete pool: no conclusive comparison.</span>
+{% endif %}</p>
+{% endfor %}
+{% if pool.reference %}
+{% set ref = pool.reference %}<h3>Separate recommended profile</h3>
+<p><b>{{ ref.name }}</b> ({{ ref.strategy }}, {{ ref.settings }}). {{ ref.why }}
+The chart on <a href="/positions#backtests">Positions</a> uses the matching saved T1/A sweep and its sweep sizing; it is not the separate flat-size taker-resweep score.</p>
+<div class="scroll"><table><thead><tr><th class="l">Profile</th>{% for y in years %}<th>{{ y }}</th>{% endfor %}</tr></thead><tbody><tr>
+<td class="l">{{ ref.name }}</td>{% for y in years %}{% set r = ref.results[y] %}
+<td>{% if r and r.weekends %}<span class="{{ pnl_cls(r.pnl) }}">{{ r.pnl|money(true) }}</span> · {{ r.up }}/{{ r.weekends }} up
+  · worst {{ r.worst|money(true) }} · DD {{ r.drawdown|money(true) }} · <a href="/lab/runs/{{ r.run_id }}">run #{{ r.run_id }}</a>
+{% elif r %}<span class="bad">No strategy P&amp;L values</span> · <a href="/lab/runs/{{ r.run_id }}">run #{{ r.run_id }}</a>
+{% else %}<span class="muted">No complete saved sweep</span>{% endif %}</td>{% endfor %}
+</tr></tbody></table></div>
+{% endif %}
+<h3>Every setup and strategy in the fixed pool</h3>
+<div class="scroll"><table><thead><tr><th class="l">Demo phase</th><th class="l">Setup</th><th class="l">Strategy</th>
+{% for y in years %}<th>{{ y }} saved backtest</th>{% endfor %}</tr></thead><tbody>
+{% for row in pool.rows %}<tr>
+<td class="l">{% if row.phases %}{% for ph in row.phases %}<b>{{ ph.code }}</b><br><span class="muted">{{ ph.period }}</span>{% endfor %}{% else %}<span class="muted">Pool candidate</span>{% endif %}</td>
+<td class="l">{{ row.settings }}</td><td class="l">{{ row.strategy }}</td>
+{% for y in years %}{% set r = row.results[y] %}<td>{% if r and r.weekends %}
+<span class="{{ pnl_cls(r.pnl) }}">{{ r.pnl|money(true) }}</span> · {{ r.up }}/{{ r.weekends }} up
+· worst {{ r.worst|money(true) }} · DD {{ r.drawdown|money(true) }} · consistency {{ "%.2f"|format(r.consistency) if r.consistency is not none }}
+· <a href="/lab/runs/{{ r.run_id }}">run #{{ r.run_id }}</a>
+{% elif r %}<span class="bad">No strategy P&amp;L values</span> · <a href="/lab/runs/{{ r.run_id }}">run #{{ r.run_id }}</a>
+{% else %}<span class="muted">No complete saved sweep</span>{% endif %}</td>{% endfor %}
+</tr>{% endfor %}
+</tbody></table></div>
+<p class="legend">P&amp;L and risk stats summarize each saved sweep's weekend results. The full run page has its detailed metrics; no result is generated by opening this section.</p>
+</details>
+{% endfor %}
+</details>
+{% endif %}
+</div>

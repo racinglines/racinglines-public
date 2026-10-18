@@ -1,0 +1,25 @@
+{% extends "base.html" %}{% from "_macros.html" import csrf, flash, page_head %}
+{% block title %}MCP access{% endblock %}
+{% block content %}
+{{ page_head("MCP access") }}
+{% include "_admin_nav.html" %}
+{{ flash(msg) }}
+<div class="card">
+<p>Server <code>{{ mcp_url }}</code>, open to {{ roles }} accounts (<code>RACINGLINES_MCP_ROLES</code>).
+{% if not signin %}<strong>Sign-in is off: APP_SECRET is unset on the MCP server.</strong>{% endif %}</p>
+{% if conns %}
+<table><thead><tr><th>Account</th><th>Role</th><th>Signed in from</th><th>rl_ token</th><th></th></tr></thead><tbody>
+{% for c in conns %}<tr><td>{{ c.username }}</td><td>{{ c.role }}</td>
+<td>{% for name, at in c.clients.items() %}{{ name }} ({{ at }}){% if not loop.last %}<br>{% endif %}{% else %}<span class="muted">none</span>{% endfor %}</td>
+<td>{{ c.token_issued_at or "none" }}</td>
+<td><form method="post" action="/admin/mcp" class="inline">{{ csrf() }}<input type="hidden" name="username" value="{{ c.username }}">
+  {% if c.clients %}<button name="action" value="disconnect">Disconnect</button>{% endif %}
+  {% if c.token_issued_at %}<button class="danger" name="action" value="revoke_token">Revoke token</button>{% endif %}</form></td></tr>
+{% endfor %}</tbody></table>
+<form method="post" action="/admin/mcp" class="mt">{{ csrf() }}
+  <button class="danger" name="action" value="disconnect_all" onclick="return confirm('Disconnect every MCP sign-in? Every client must sign in again.')">Disconnect everyone</button></form>
+{% else %}
+<p class="muted">Nobody has connected yet.</p>
+{% endif %}
+</div>
+{% endblock %}

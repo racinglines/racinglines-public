@@ -1,0 +1,52 @@
+{% extends "base.html" %}{% from "_macros.html" import source_note %}
+{% block title %}Live{% endblock %}
+{% block content %}
+{# The shell: a replay bar once the event is over (app.js steps the slider; each step fetches the page as of that
+   snapshot into #live), else #live re-fetches itself at the sport's cadence. The body is the sport's partial. #}
+{% if events %}
+<div class="card mb12">
+  <div class="tabs" role="group" aria-label="Live event switcher">
+    <b>Event</b>
+    {% for e in events %}<a href="/live?event={{ e.run|urlencode }}{% if t %}&t={{ t }}{% endif %}" class="{{ 'sel' if e.run == current_run }}">{{ e.title or e.event_key }}</a>{% endfor %}
+  </div>
+</div>{% endif %}
+{% if times %}
+<div class="card replay" id="replay" data-times='{{ times|tojson }}' data-url="/live?event={{ current_run|urlencode }}" data-pace="{{ 'real' if sport == 'mtb_dh' else 'fixed' }}" data-speed="30">
+  <div class="tabs" role="group" aria-label="Replay controls">
+    <b>{{ 'Replay' if mode == 'replay' else 'History' }}</b>
+    <button type="button" data-step="-1" title="Previous update">◀</button>
+    <button type="button" id="rp-play" aria-pressed="false">▶ Play</button>
+    <button type="button" data-step="1" title="Next update">▶</button>
+    <span class="muted small">speed</span>
+    {% for x in [10, 30, 60] %}<button type="button" data-speed="{{ x }}" aria-pressed="{{ 'true' if x == 30 else 'false' }}">{{ x }}×</button>{% endfor %}
+    <span id="rp-time" class="muted small ml-auto"></span><a id="rp-link" class="small" href="/live?event={{ current_run|urlencode }}&t={{ t }}" title="A link to the page as of this update">link</a>
+  </div>
+  <input id="rp-slider" type="range" min="0" max="{{ times|length - 1 }}" value="{{ times.index(t) if t in times else times|length - 1 }}" aria-label="Replay time">
+  {% if sport == 'mtb_dh' %}<p class="legend mb0">View the {{ times|length }} saved updates for this run as they were seen live, or jump to any session snapshot, even while a final is still running.</p>
+  {%- else %}<p class="legend mb0">Step or play through the weekend's {{ times|length }} updates ({{ times[0][:8] }}–{{ times[-1][:8] }}) as they were seen live: the stages, fair values, quotes and the private book.</p>{% endif %}
+  {% if times|length <= 12 %}
+  <p class="small muted mb0">{% for x in times %}<a href="/live?event={{ current_run|urlencode }}&t={{ x }}" class="{{ 'sel' if x == t }}">{{ x[:16]|replace('T', ' ') }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>
+  {% elif t %}
+  <p class="small muted mb0">{% for x in [times[0], times[(times|length // 2)], times[-1]] %}<a href="/live?event={{ current_run|urlencode }}&t={{ x }}" class="{{ 'sel' if x == t }}">{{ x[:16]|replace('T', ' ') }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>
+  {% endif %}
+</div>{% endif %}
+{% if f1_stream and sport == 'f1' and stream_event %}
+{# Opt-in live timing (web/f1_live.py; RACINGLINES_F1_STREAM, on by default only on staging). Outside #live, so the
+   page's own refresh doesn't reset it. Off until the viewer turns it on; the debug log is for testing, admins only. #}
+<div class="card mb12" id="f1-stream" data-event="{{ stream_event }}">
+  <div class="tabs" role="group" aria-label="Live timing">
+    <b>Live timing</b> <span class="pill no">beta</span>
+    <button type="button" id="fs-toggle" aria-pressed="false">Turn on</button>
+    <span id="fs-state" class="muted small">off</span>
+  </div>
+  <div id="fs-table"></div>
+  {{ source_note("f1") }}
+  {% if user.role == 'admin' %}<details><summary class="small">Debug log</summary>
+    <pre id="fs-log" class="small" style="max-height:16em;overflow:auto;white-space:pre-wrap;margin:0"></pre>
+    <button type="button" id="fs-copy" class="small">Copy log</button>
+  </details>{% endif %}
+</div>
+<script src="/static/f1_stream.js?v={{ css_v() }}" defer></script>
+{% endif %}
+<div id="live"{% if mode == 'live' %} hx-get="/live?{{ evq|safe }}partial=1" hx-trigger="every {{ 5 if sport == 'mtb_dh' else 30 }}s [document.visibilityState=='visible']" hx-swap="innerHTML"{% endif %}>{% include "live_partial.html" %}</div>
+{% endblock %}

@@ -1,0 +1,188 @@
+# OG.com (Crypto.com's CFTC prediction market): an exchange defined as data. Read by racinglines/exchanges.py; the one
+# generic driver (racinglines/markets/exchange_driver.py) does the sync, tape, history and books from this file, so
+# adding a venue with a plain JSON API is a new file here, not new code. Read-only: only public market data, no key.
+# Built from real responses captured 2026-09-29 (tests/fixtures/market/og_*.json, described in og_README.txt).
+# Off by default: the app shows the venue only with RACINGLINES_OG_VENUE=1. Nothing here sends an order.
+
+[exchange]
+code = "og"
+name = "OG.com"
+kind = "exchange"
+switch = "RACINGLINES_OG_VENUE"          # env var; the venue appears in the app only when it is 1 / true / yes
+url = "https://og.com/"                  # no per-event page pattern known: the venue links to the front page
+# What the feed offers historically, shown under the Markets board's "Exchange data" counts.
+coverage = "OG.com: the API serves only about the last month of trades and minute prices, so history starts when we began pulling (2026-09-29); no book history (one snapshot per books run)."
+# The taker fee per contract, in dollars, from 2026 reviews of the exchange (UNVERIFIED against its fee schedule).
+# Used only by the fair-price report; change it here when the schedule is confirmed.
+taker_fee_per_contract = 0.02
+
+[api]
+host = "https://api.crypto.com"
+host_env = "OG_API_HOST"                 # override, e.g. the UAT sandbox https://uat-api.3ona.co
+prefix = "/fcm/v1/public"
+timeout = 20
+max_per_second = 20                      # the exchange allows 100 per method per IP; stay well under it
+ok_path = "code"                         # every response is {"code": 0, "result": {...}}
+ok_value = 0
+error_path = "message"
+
+[endpoints.events]
+path = "/get-events"
+data = "result.data"
+next = "result.next_cursor"              # paged with cursor=<next>; the last page has none
+cursor_param = "cursor"
+params = { since = 0, limit = 1000 }
+
+[endpoints.instruments]
+path = "/get-instruments"
+data = "result.data"
+next = "result.next_cursor"
+cursor_param = "cursor"
+params = { limit = 1000 }
+batch_param = "event_symbols"            # comma-separated event symbols, at most `batch_size` per call
+# The live API caps this at 10: 11 or more event symbols return 400 {"code": 40004, "message": "Invalid event_symbol"}
+# whatever the symbols are (checked against api.crypto.com on 2026-09-29; the fixture request used 2). get-tickers took 20.
+batch_size = 10
+limits = { max_batch = 10 }             # checked when the schema loads (racinglines/exchanges.py)
+
+[endpoints.tickers]
+path = "/get-tickers"
+data = "result.data"
+batch_param = "instrument_name"          # comma-separated instrument symbols
+batch_size = 50
+
+[endpoints.book]
+path = "/get-book"
+data = "result.data"
+params = { depth = 50 }
+instrument_param = "instrument_name"
+
+[endpoints.trades]
+path = "/get-trades"
+data = "result.data"
+instrument_param = "instrument_name"
+start_param = "start_ts"                 # nanoseconds
+start_unit = "ns"
+params = { count = 150 }                 # the server's maximum: 200 and up is "Invalid count" (checked 2026-09-29)
+limits = { max_count = 150 }
+window_days = 30                         # the docs say 7; the server accepted 30 and 60, and returned nothing at 100
+
+[endpoints.history]
+path = "/get-ticker-histories"
+data = "result.data"
+instrument_param = "instrument_names"
+start_param = "start_ts"                 # milliseconds
+end_param = "end_ts"
+start_unit = "ms"
+params = { count = 1000 }
+window_days = 31                         # start to end at most 31 days, 1,000 one-minute rows a call
+limits = { max_window_days = 31 }
+
+[endpoints.settlements]
+# Who won. get-instruments, get-events and get-tickers drop an instrument once it settles (a settled event returns
+# []), so the listing never says the outcome; this feed does. It holds every instrument the exchange settles (mostly
+# FX and crypto, about 20,000 rows per 12 hours), unfiltered: an instrument_type filter is refused together with
+# since / cursor. exchange_driver.settle scans it forward from `since` until every closed, unresolved link of the
+# sport is found or the feed ends (probed from the owner's Mac 2026-10-06; the docs site is JS-only and unreadable).
+path = "/get-expired-settlement-price"
+data = "result.data"
+next = "result.next_cursor"              # paged with cursor=<next>, like get-events; the last page has none
+cursor_param = "cursor"
+start_param = "since"                    # nanoseconds; the feed goes back to about 2026-07-08
+start_unit = "ns"
+params = { limit = 1000 }                # 1,000 rows a call worked; about 20 calls cover 12 hours
+max_pages = 500                          # our own cap per pass (500,000 rows, about 12 days); the next pass resumes
+
+# Where each thing lives in a response: dotted paths into the JSON ("a.b" = obj["a"]["b"]). `unit` says how a time
+# is written: ms / ns since the epoch, or iso.
+[fields.event]
+id = "symbol"
+name = "name"
+sports_grouping = "event_details.metaData.SPORTS_GROUPING"
+
+[fields.instrument]
+id = "symbol"
+event = "underlying_symbol"
+subject = "event_details.metaData.PARTICIPANT"           # the driver, team or player
+contract = "event_details.metaData.PREDICT_CONTRACT_TYPE"  # the market's name, e.g. "F1 Drivers' Champion 2026"
+event_title = "event_details.metaData.NAME"
+title = "display_name"
+tick = "price_tick_size"
+tradable = "tradable"
+expiry = "expiry_timestamp_ms"
+expiry_unit = "ms"
+
+[fields.ticker]
+instrument = "i"
+bid = "b"
+ask = "k"
+last = "a"
+volume = "v"
+
+[fields.book]
+instrument = "instrument_name"
+bids = "data.0.bids"                     # levels [price, quantity], strings
+asks = "data.0.asks"
+ts = "data.0.t"
+ts_unit = "ms"
+
+[fields.trade]
+id = "d"
+ts = "t"
+ts_unit = "ms"
+price = "p"
+size = "q"
+side = "s"                               # "buy" / "sell", the taker's side of the YES contract
+
+[fields.history]
+instrument = "i"
+ts = "t"
+ts_unit = "ms"
+bid = "b"
+ask = "k"
+last = "a"
+
+[fields.settlement]
+# One row per settled instrument: {"i": symbol, "x": expiry ms, "v": "1.00" | "0.00" | "0.50", "t": settled at ms}.
+# `value` is what one YES contract paid: 1 = YES, 0 = NO, anything between (0.50 seen) is a void, which leaves
+# resolved_yes empty. Sports contracts settle when decided, not at the nominal expiry (the Sepang race winners
+# expire 2026-11-30; 21 of 22 settled 2026-10-04 11:36 UTC), so `ts` is the settle time and `expiry` only a note.
+instrument = "i"                         # equals market_links.token_id (and market_slug)
+value = "v"
+ts = "t"
+ts_unit = "ms"
+expiry = "x"
+expiry_unit = "ms"
+
+[prices]
+unit = "dollars"                         # 0 to 1, decimal strings; a contract pays $1
+
+# What the exchange lists of each of our sports: how to find its events and how a market is named. A sport listed
+# here without `modeled = true` is tape-only (every link unmodeled, recorded like Kalshi's NASCAR). Its rules map a
+# market's contract name (regex, case-insensitive, first match wins) to one of our prediction kinds and to what its
+# `subject` field names (driver, team). The sport's own schema (sports/<code>.toml) says which competition it is.
+[sports.f1]
+event_prefixes = ["F1-"]                 # season futures carry no SPORTS_GROUPING, so events are found by symbol
+modeled = true
+[[sports.f1.rules]]
+contract = "constructors'? champion"
+kind = "constructors_champion"
+subject = "team"
+[[sports.f1.rules]]
+contract = "drivers'? champion"
+kind = "champion"
+subject = "driver"
+[[sports.f1.rules]]
+contract = "^race winner$"               # a Grand Prix's winner (event "Bahrain Grand Prix 2026"): linked to that race
+kind = "race_win"
+subject = "driver"
+
+[sports.nascar]
+event_prefixes = ["NSCAR-"]              # 17 Cup Champion contracts; tape only
+modeled = false
+
+[sports.sailgp]
+# 13 Championship Winner contracts plus per-event Overall Winner events (tests/fixtures/market/og_events_sailgp.json,
+# symbols SAIL-000NN-26); tape only
+event_prefixes = ["SAIL-"]
+modeled = false

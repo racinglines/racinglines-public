@@ -1,0 +1,241 @@
+# Walk-forward calibration power for F1 race-win prices (C48; racinglines/models/calibration.py).
+#
+# The simulation's win chances p_i are mapped to p_i^a / sum_j p_j^a and every simulated race is resampled to match
+# (so podium, top 10, head-to-head and constructor prices move with the win price). a > 1 sharpens the favourites.
+# The `calib_power` setting turns it on: unset = off (every key unchanged), "walk_forward" = this table, a number =
+# that power at every stage.
+#
+# Each fit row is the power that minimised the winner's log loss over every race finished before `from` (a grid of
+# a = 1.0 to 4.0 in 0.1 steps), so a price with a cutoff on or after `from` only uses earlier races (the as-of rule).
+# `from` is two days after the last race in the fit (a night race can end after midnight UTC).
+#   grid    stages where the starting grid is known (after qualifying)
+#   nogrid  stages before it (pre-weekend, practice, sprint sessions)
+#   races   races in the fit
+# Source: scripts/models/fit_calibration.py --sims 4000 --check, on the as-of stage prices of the default model
+# (gridq+pretrain+reset, calib_power unset) from `racinglines strategy sweep f1 --year 2025|2026 --sims 4000`, 39 Grands Prix
+# 2025-01 to 2026-15 (the cloud data bucket's database, built 2026-10-14). Refit on the VM after each race to add rows.
+# A cutoff before the first `from` gets no calibration (a = 1): fewer than 8 races to fit on.
+# Rebuild: docs/f1-calibration.md.
+
+[[fit]]
+from = 2025-05-27
+grid = 2.6
+nogrid = 2.6
+races = 8
+next_event = "2025-09"
+
+[[fit]]
+from = 2025-06-03
+grid = 2.8
+nogrid = 2.6
+races = 9
+next_event = "2025-10"
+
+[[fit]]
+from = 2025-06-17
+grid = 2.6
+nogrid = 1.8
+races = 10
+next_event = "2025-11"
+
+[[fit]]
+from = 2025-07-01
+grid = 2.8
+nogrid = 1.9
+races = 11
+next_event = "2025-12"
+
+[[fit]]
+from = 2025-07-08
+grid = 2.5
+nogrid = 2.0
+races = 12
+next_event = "2025-13"
+
+[[fit]]
+from = 2025-07-29
+grid = 2.3
+nogrid = 2.2
+races = 13
+next_event = "2025-14"
+
+[[fit]]
+from = 2025-08-05
+grid = 2.1
+nogrid = 2.3
+races = 14
+next_event = "2025-15"
+
+[[fit]]
+from = 2025-09-02
+grid = 2.2
+nogrid = 2.3
+races = 15
+next_event = "2025-16"
+
+[[fit]]
+from = 2025-09-09
+grid = 2.3
+nogrid = 2.2
+races = 16
+next_event = "2025-17"
+
+[[fit]]
+from = 2025-09-23
+grid = 2.4
+nogrid = 2.1
+races = 17
+next_event = "2025-18"
+
+[[fit]]
+from = 2025-10-07
+grid = 2.5
+nogrid = 1.9
+races = 18
+next_event = "2025-19"
+
+[[fit]]
+from = 2025-10-21
+grid = 2.5
+nogrid = 1.9
+races = 19
+next_event = "2025-20"
+
+[[fit]]
+from = 2025-10-28
+grid = 2.6
+nogrid = 2.0
+races = 20
+next_event = "2025-21"
+
+[[fit]]
+from = 2025-11-11
+grid = 2.7
+nogrid = 2.1
+races = 21
+next_event = "2025-22"
+
+[[fit]]
+from = 2025-11-24
+grid = 2.4
+nogrid = 2.1
+races = 22
+next_event = "2025-23"
+
+[[fit]]
+from = 2025-12-02
+grid = 2.2
+nogrid = 2.1
+races = 23
+next_event = "2025-24"
+
+[[fit]]
+from = 2025-12-09
+grid = 2.3
+nogrid = 2.1
+races = 24
+next_event = "2026-01"
+
+[[fit]]
+from = 2026-03-10
+grid = 2.3
+nogrid = 2.2
+races = 25
+next_event = "2026-02"
+
+[[fit]]
+from = 2026-03-17
+grid = 2.4
+nogrid = 2.1
+races = 26
+next_event = "2026-03"
+
+[[fit]]
+from = 2026-03-31
+grid = 2.5
+nogrid = 2.1
+races = 27
+next_event = "2026-04"
+
+[[fit]]
+from = 2026-05-05
+grid = 2.5
+nogrid = 2.1
+races = 28
+next_event = "2026-05"
+
+[[fit]]
+from = 2026-05-26
+grid = 2.4
+nogrid = 2.1
+races = 29
+next_event = "2026-06"
+
+[[fit]]
+from = 2026-06-09
+grid = 2.5
+nogrid = 2.1
+races = 30
+next_event = "2026-07"
+
+[[fit]]
+from = 2026-06-16
+grid = 2.3
+nogrid = 1.9
+races = 31
+next_event = "2026-08"
+
+[[fit]]
+from = 2026-06-30
+grid = 2.4
+nogrid = 2.0
+races = 32
+next_event = "2026-09"
+
+[[fit]]
+from = 2026-07-07
+grid = 2.3
+nogrid = 2.0
+races = 33
+next_event = "2026-10"
+
+[[fit]]
+from = 2026-07-21
+grid = 2.4
+nogrid = 2.0
+races = 34
+next_event = "2026-11"
+
+[[fit]]
+from = 2026-07-28
+grid = 2.4
+nogrid = 2.0
+races = 35
+next_event = "2026-12"
+
+[[fit]]
+from = 2026-08-25
+grid = 2.5
+nogrid = 2.0
+races = 36
+next_event = "2026-13"
+
+[[fit]]
+from = 2026-09-08
+grid = 2.2
+nogrid = 2.0
+races = 37
+next_event = "2026-14"
+
+[[fit]]
+from = 2026-09-15
+grid = 2.2
+nogrid = 2.0
+races = 38
+next_event = "2026-15"
+
+[[fit]]
+from = 2026-09-28
+grid = 2.3
+nogrid = 2.1
+races = 39

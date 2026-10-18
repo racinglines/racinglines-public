@@ -1,0 +1,123 @@
+{% extends "base.html" %}{% from "_macros.html" import pnl_cls, csrf, table, flash, page_head %}
+{% block title %}Diagnostic · {{ d.event.venue }}{% endblock %}
+{% block head %}<script src="/static/replay.js?v={{ css_v() }}" defer></script>{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/lab">Lab</a> › Diagnostics</p>
+{% set head_title %}{{ d.event.venue }} · as of {{ d.params.cutoff }} UTC{% endset %}
+{{ page_head(head_title) }}
+{{ flash(msg) }}
+<p class="muted">Diagnostic run <a href="/lab/runs/{{ d.run.id }}">#{{ d.run.id }}</a> · {{ d.event.name }} · event {{ d.event.source_key }}</p>
+
+<p>As-of runs for this event: {% for r in runs %}{% if r.id == d.run.id %}<b>#{{ r.id }} ({{ r.cutoff }})</b>{% else %}<a href="/lab/diagnostics/{{ r.id }}">#{{ r.id }} ({{ r.cutoff }})</a>{% endif %}{{ " · " if not loop.last }}{% endfor %}</p>
+<nav class="ptabs" data-tabs="diag" role="tablist"><button type="button" role="tab" data-tab="s1">1 · What the model knew</button><button type="button" role="tab" data-tab="s2">2 · Prices vs Polymarket</button><button type="button" role="tab" data-tab="s3">3 · Result and scoring</button><button type="button" role="tab" data-tab="s4">4 · Taking Polymarket</button><button type="button" role="tab" data-tab="s5">5 · Maker replay</button><button type="button" role="tab" data-tab="s6">6 · In the app</button></nav>
+<section data-panel="s1"><div class="card"><h2>1 · What the model knew</h2>
+<div class="scroll"><table><tbody>
+<tr><td class="l">Cutoff</td><td class="l wrap"><b>{{ d.params.cutoff }} UTC</b></td></tr>
+<tr><td class="l">This event's sessions</td><td class="l wrap">{% for k, v in d.metrics.audit.event_sessions.items() %}{% if v %}{{ k }} {{ v }} {% if k in d.metrics.audit.sessions_used %}<span class="good">used</span>{% else %}<span class="bad">excluded</span>{% endif %} · {% endif %}{% endfor %}</td></tr>
+<tr><td class="l">Latest data in each table</td><td class="l wrap">{% for k, v in d.metrics.audit.latest_data.items() %}{{ k }}: {{ v }} · {% endfor %}</td></tr>
+<tr><td class="l">Grid</td><td class="l wrap">{{ d.metrics.audit.grid }}</td></tr>
+<tr><td class="l">Races the finishing model trained on</td><td class="l wrap">{{ d.metrics.audit.training_races }} (all before the cutoff)</td></tr>
+<tr><td class="l">Polymarket prices</td><td class="l wrap">never used to fit or price; read from stored hourly history at/before the cutoff for comparison only</td></tr>
+</tbody></table></div></div>
+
+</section>
+<section data-panel="s2" hidden><div class="card"><h2>2 · Our prices vs Polymarket at the cutoff</h2>
+<p class="muted">PM@cutoff = last Polymarket price at/before the cutoff; 24h move = change over the 24 hours before it; latest = now (after the result). Edge = our fair − PM@cutoff.</p>
+{% for kind, ms in groups %}
+<h3>{{ {"race_win": "Winner", "race_podium": "Podium", "race_h2h": "Head-to-head (who finishes higher)", "race_constructor_top": "Top-scoring constructor"}.get(kind, kind) }}</h3>
+<div class="scroll"><table><thead><tr><th class="l">Outcome</th><th>Our fair</th><th>PM@cutoff</th><th>PM 24h move</th><th>Edge</th><th>Paper trade</th><th>Result</th><th>Paper P&amp;L</th><th>PM latest</th></tr></thead><tbody>
+{% for r in ms %}{% if r.fair is not none or r.pm_cut is not none %}<tr>
+<td class="l">{{ r.subject }}{% if kind == 'race_h2h' %} <span class="muted">({{ r.question.split(': ')[-1] }})</span>{% endif %}</td>
+<td>{{ r.fair|fmt("model_prob") if r.fair is not none else "–" }}</td>
+<td>{{ "%.3f"|format(r.pm_cut) if r.pm_cut is not none else "–" }}</td>
+<td class="{{ pnl_cls(r.pm_move_24h) if r.pm_move_24h and r.pm_move_24h|abs > 0.01 else '' }}">{{ ("%+.3f"|format(r.pm_move_24h)) if r.pm_move_24h is not none else "" }}</td>
+<td>{{ ("%+.1f"|format(r.edge * 100)) ~ " pts" if r.edge is not none else "" }}</td>
+<td>{{ r.paper_side or "" }}{% if r.paper_side %} @ {{ "%.3f"|format(r.paper_price) }}{% endif %}</td>
+<td>{{ "YES" if r.result == True else ("NO" if r.result == False else "") }}</td>
+<td class="{{ pnl_cls(r.paper_pnl) }}">{{ (r.paper_pnl|money(true)) if r.paper_pnl is not none else "" }}</td>
+<td>{{ "%.3f"|format(r.pm_latest) if r.pm_latest is not none else "" }}</td></tr>{% endif %}{% endfor %}
+</tbody></table></div>
+{% endfor %}
+</div>
+
+</section>
+<section data-panel="s3" hidden><div class="card"><h2>3 · Result and scoring (read after pricing)</h2>
+<div class="grid"><div>
+{{ table(scores, ["kind", "markets", "brier_model", "brier_polymarket", "logloss_model", "logloss_polymarket"]) }}
+<p class="muted">Lower is better. Polymarket at the cutoff is the benchmark to beat; one race is a very small sample.</p></div>
+<div>{{ table(result[:10], ["position", "driver", "status", "points"]) }}</div></div></div>
+
+</section>
+<section data-panel="s4" hidden><div class="card"><h2>4 · Taking Polymarket at the cutoff (paper)</h2>
+<p>Rule (decided at the cutoff): buy YES at PM@cutoff when our fair is ≥ {{ "%.0f"|format(consts.paper_edge * 100) }} pts above it, buy NO when ≥ {{ "%.0f"|format(consts.paper_edge * 100) }} pts below; {{ consts.paper_stake|money(false, false) }} per trade.
+<b>{{ summary.paper_n }}</b> trades · staked {{ summary.paper_staked|money(false, false) }} · P&amp;L <b class="{{ pnl_cls(summary.paper_pnl) }}">{{ summary.paper_pnl|money(true) }}</b></p>
+<p class="muted">A taker's test of the model: it pays Polymarket's price with no spread or slippage (optimistic). {% for k, c in coherence.items() %}{% if not c.ok %}<b>{{ k }}</b>: Polymarket prices summed to {{ "%.2f"|format(c.sum) }} (expected {{ c.target }}), an empty book, so it's excluded. {% endif %}{% endfor %}</p></div>
+
+</section>
+<section data-panel="s5" hidden><div class="card"><h2>5 · Maker replay on {{ "Kalshi" if venue == 'kalshi' else "Polymarket" }}'s real trade tape</h2>
+<p>Our maker rests post-only quotes on {{ "Kalshi" if venue == 'kalshi' else "Polymarket" }} at fair ± {{ "%.0f"|format(rp.params.half_spread * 100) }}¢ (skewed against inventory, never crossing the market, so YES bid + NO bid &lt; $1), requoting every {{ rp.params.step_min }} min and pulling {{ rp.params.pull_min }} min before qualifying and the race.
+It skips markets priced outside {{ "%.0f"|format(rp.params.price_band[0] * 100) }}–{{ "%.0f"|format(rp.params.price_band[1] * 100) }}¢, with under {{ rp.params.min_volume_24h|money(false, false) }} traded in the last 24 h, {% if rp.params.max_disagree %}or where our fair is more than {{ "%.0f"|format(rp.params.max_disagree * 100) }} pts from the market{% else %}(disagreement filter off){% endif %}.
+Limits: {{ "%.0f"|format(rp.params.size) }} shares per quote, {{ "%.0f"|format(rp.params.max_pos) }} shares per market, {{ rp.params.max_capital|money(false, false) }} worst-case loss for the event.
+It only gets filled by <b>real taker trades that came after its quote</b> — takers see prices, not our fair value.{% if venue == 'kalshi' %} Kalshi charges makers a fee: ceil({{ rp.params.maker_fee }} × contracts × P × (1 − P)) cents per fill, taken from the P&amp;L.{% endif %}</p>
+<div class="card mt" data-wasm-replay="/lab/diagnostics/{{ d.run.id }}/tape.json{{ '?venue=kalshi' if venue == 'kalshi' else '' }}" data-wasm="/static/replay.wasm?v={{ css_v() }}">
+<h3>Live replay, run in your browser</h3>
+<p class="muted">Downloads this event's tape once (about 2 MB) and re-runs the whole replay on your computer as you move the knobs, with the same rules and data as the server replay below.</p>
+<p><button type="button" class="primary" data-start>Start the live replay</button> <span data-status class="muted"></span></p>
+<div data-controls hidden><div class="jobform">
+<label><span>Fill rule</span><select data-knob="fill"><option value="through" {{ 'selected' if fill == 'through' }}>through (conservative)</option><option value="touch" {{ 'selected' if fill == 'touch' }}>touch (optimistic)</option></select></label>
+<label><span>Half-spread <b data-show="half_spread"></b></span><input data-knob="half_spread" type="range" {% set r = ui_range("half_spread", rp.params.half_spread) %}min="{{ r[0] }}" max="{{ r[1] }}" step="0.005" value="{{ rp.params.half_spread }}"></label>
+<label><span>Shares per quote <b data-show="size"></b></span><input data-knob="size" type="range" {% set r = ui_range("size", rp.params.size) %}min="{{ r[0] }}" max="{{ r[1] }}" step="1" value="{{ rp.params.size }}"></label>
+<label><span>Max shares per market <b data-show="max_pos"></b></span><input data-knob="max_pos" type="range" {% set r = ui_range("max_pos", rp.params.max_pos) %}min="{{ r[0] }}" max="{{ r[1] }}" step="10" value="{{ rp.params.max_pos }}"></label>
+<label><span>Max worst-case loss $ <b data-show="max_capital"></b></span><input data-knob="max_capital" type="range" {% set r = ui_range("max_capital", rp.params.max_capital) %}min="{{ r[0] }}" max="{{ r[1] }}" step="10" value="{{ rp.params.max_capital }}"></label>
+<label><span>Inventory skew <b data-show="skew"></b></span><input data-knob="skew" type="range" {% set r = ui_range("skew", rp.params.skew) %}min="{{ r[0] }}" max="{{ r[1] }}" step="0.25" value="{{ rp.params.skew }}"></label>
+<label><span>Skip if |fair − market| &gt; <b data-show="max_disagree"></b></span><input data-knob="max_disagree" type="range" {% set r = ui_range("max_disagree", rp.params.max_disagree or 0) %}min="{{ r[0] }}" max="{{ r[1] }}" step="0.01" value="{{ rp.params.max_disagree or 0 }}"></label>
+<label><span>Min $ traded, last 24 h <b data-show="min_volume_24h"></b></span><input data-knob="min_volume_24h" type="range" {% set r = ui_range("min_volume_24h", rp.params.min_volume_24h or 0) %}min="{{ r[0] }}" max="{{ r[1] }}" step="50" value="{{ (rp.params.min_volume_24h or 0)|int }}"></label>
+<label><span>Pull before session (min) <b data-show="pull_min"></b></span><input data-knob="pull_min" type="range" {% set r = ui_range("pull_min", rp.params.pull_min) %}min="{{ r[0] }}" max="{{ r[1] }}" step="5" value="{{ rp.params.pull_min }}"></label>
+</div>
+<p class="legend">Ranges are the server form's, narrowed to what a slider can reach (the form below takes any value). Half-spread is in dollars per share (0.02 = 2¢); disagreement 0 turns the filter off.</p>
+<div data-out></div></div>
+</div>
+<h3 class="mt">Server replay</h3>
+<form method="get" class="jobform mt">
+{%- if kalshi %}<label><span>Exchange</span><select name="venue"><option value="">Polymarket</option><option value="kalshi" {{ 'selected' if venue == 'kalshi' }}>Kalshi</option></select></label>{% endif %}
+<label><span>Fill rule</span><select name="fill"><option value="through" {{ 'selected' if fill == 'through' }}>through (conservative)</option><option value="touch" {{ 'selected' if fill == 'touch' }}>touch (optimistic)</option></select></label>
+<label><span>Half-spread (¢)</span><input name="h" type="number" step="0.005" min="0.005" max="0.2" value="{{ rp.params.half_spread }}"></label>
+<label><span>Shares per quote</span><input name="size" type="number" min="1" value="{{ rp.params.size|int }}"></label>
+<label><span>Max shares per market</span><input name="max_pos" type="number" min="1" value="{{ rp.params.max_pos|int }}"></label>
+<label><span>Max worst-case loss ($)</span><input name="cap" type="number" min="10" value="{{ rp.params.max_capital|int }}"></label>
+<label><span>Inventory skew</span><input name="skew" type="number" step="0.25" min="0" max="5" value="{{ rp.params.skew }}"></label>
+<label><span>Skip if |fair − market| &gt; (0 = off)</span><input name="disagree" type="number" step="0.05" min="0" max="1" value="{{ rp.params.max_disagree or 0 }}"></label>
+<label><span>Min $ traded, last 24 h</span><input name="min_vol" type="number" min="0" value="{{ rp.params.min_volume_24h|int }}"></label>
+<label><span>Pull before session (min)</span><input name="pull" type="number" min="0" max="240" value="{{ rp.params.pull_min }}"></label>
+<label><button class="primary">Replay</button></label></form>
+<p class="legend">Half-spread is in dollars per share (0.02 = 2¢). Results update in about a second; the sensitivity table varies half-spread and fill rule around these settings.</p>
+
+<h3>Pricing stages</h3>
+<p class="muted">Each stage uses one as-of run, from its cutoff until the next run or the next session.</p>
+{{ table(rp_stages, ["run_id", "start", "end", "fills", "notional", "spread_pnl", "markout_60m", "model_edge", "pnl"], {"run_id": ["/lab/diagnostics/", "run_id"]}) }}
+
+<h3>By market type</h3>
+{{ table(rp_summary, ["kind", "markets", "quoted_share", "fills", "shares", "notional", "spread_pnl", "markout_60m", "model_edge", "pnl", "worst_case"]) }}
+<p class="muted"><b>spread_pnl</b>: captured vs the market price at the fill. <b>markout_60m</b>: the market's move over the next hour against us (negative = adverse selection: the takers knew something). <b>model_edge</b>: what our fair value said the fills were worth. <b>pnl</b>: held to the official result. <b>worst_case</b>: worst loss of the positions at the race start.</p>
+
+<div class="grid"><div><h3>Why markets weren't quoted</h3>{{ table(rp_skips, ["reason", "market_steps"]) }}</div>
+<div><h3>Positions at the race start</h3>{{ table(rp_positions, ["kind", "subject", "inventory", "cash", "worst_case", "outcome", "pnl"]) }}</div></div>
+
+<h3>Biggest fills</h3>
+{{ table(rp_top, ["ts", "kind", "subject", "side", "price", "qty", "fair", "mid", "markout_60m", "pnl"], cap=12) }}
+
+<h3>Sensitivity</h3>
+{{ table(rp_sweep, ["half_spread", "fill", "max_disagree", "fills", "notional", "spread_pnl", "markout_60m", "pnl", "worst_case"]) }}
+<p class="muted">Limits: minute prices and trades only, no order-book depth (queue position and competing makers are unknown), and our quotes don't change what takers would have done. Book snapshots recorded from now on {% if user.role == 'admin' %}(<code>racinglines markets record</code>) {% endif %}replace the touch/through bounds with a queue model.</p>
+</div>
+
+</section>
+<section data-panel="s6" hidden><div class="card"><h2>6 · In the app: Polymarket's takers</h2>
+<p>The <code>polymarket-takers</code> system account (no login) stands in for the Polymarket traders whose real trades filled the replayed maker: each fill becomes its bet on the demo <code>maker</code>'s market for that outcome, at the maker's price, so its P&amp;L is the maker's P&amp;L reversed. It is not the demo <code>taker</code>, which paper trades its own strategy on the Strategy page.</p>
+<form method="post" action="/lab/diagnostics/{{ d.run.id }}/example">{{ csrf() }}<input type="hidden" name="fill" value="{{ fill }}">
+<button class="primary">{{ 'Re-record' if bets else 'Record' }} the replay's fills ({{ fill }}) as Polymarket-taker bets</button></form>
+{% if bets %}<p><b>{{ summary.taker_n }}</b> Polymarket-taker bets · staked {{ summary.taker_staked|money(false, false) }} · their P&amp;L <b class="{{ pnl_cls(summary.taker_pnl) }}">{{ summary.taker_pnl|money(true) }}</b> · maker P&amp;L <b class="{{ 'good' if -summary.taker_pnl >= 0 else 'bad' }}">{{ -summary.taker_pnl|money(true) }}</b></p>
+{{ table(bets, ["id", "title", "side", "price", "stake", "payout", "status", "taker_pnl", "note"], cap=15, filter="Filter by market") }}{% endif %}
+</div>
+</section>
+{% endblock %}

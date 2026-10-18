@@ -1,0 +1,8 @@
+{# The alpha Lab's sections (web/layout.py): one tab for the advanced tools. Shown only with the alpha layout on. #}
+{% if alpha_layout is defined and alpha_layout() %}{% set p = request.url.path if request else "" %}
+<nav class="tabs lab-nav" aria-label="Lab">
+  <a href="/strategy/pick"{% if p.startswith('/strategy/pick') %} aria-current="page"{% endif %}>Follow a strategy</a>
+  <a href="/strategy"{% if p == '/strategy' %} aria-current="page"{% endif %}>Strategy performance{% if signals_nav and signals_nav.unread %} <span class="pill new">{{ signals_nav.unread }}</span>{% endif %}</a>
+  <a href="/positions"{% if p == '/positions' %} aria-current="page"{% endif %}>Its positions</a>
+  {% if user and user.role in ('admin', 'pro') %}<a href="/lab"{% if p == '/lab' or p.startswith('/lab/') %} aria-current="page"{% endif %}>Backtests and research</a>{% endif %}
+</nav>{% endif %}

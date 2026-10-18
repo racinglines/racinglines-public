@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% from "_macros.html" import empty, flash, page_head %}
+{% block title %}{{ table_name }}{% endblock %}
+{% block content %}
+{% set head_title %}<a href="/admin/db">Database</a> / {{ table_name }} <span class="muted">({{ total }} rows)</span>{% endset %}
+{{ page_head(head_title) }}
+{% include "_admin_nav.html" %}
+{{ flash(msg) }}
+<form method="get"><label><span>Column</span><select name="col"><option value="">–</option>{% for c in columns %}<option {% if c == col %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></label>
+<label><span>equals (text; NULL for null)</span><input name="val" value="{{ val }}" size="20"></label><button>Filter</button></form>
+{% if records %}<div class="scroll"><table><thead><tr><th></th>{% for c in columns %}<th class="l">{{ c }}</th>{% endfor %}</tr></thead><tbody>
+{% for r in records %}{% set i = loop.index0 %}<tr>
+<td><a href="/admin/db/{{ table_name }}/row?{% for p in pk %}pk_{{ p }}={{ raw[i][p] }}{% if not loop.last %}&amp;{% endif %}{% endfor %}">edit</a></td>
+{% for c in columns %}<td class="wrap">{{ r[c][:200] }}</td>{% endfor %}</tr>{% endfor %}
+</tbody></table></div>{% else %}{{ empty("No rows yet.") }}{% endif %}
+<p>{% if page > 0 %}<a href="?col={{ col }}&amp;val={{ val }}&amp;page={{ page - 1 }}">← newer</a>{% endif %}
+ page {{ page + 1 }} {% if (page + 1) * page_size < total %}<a href="?col={{ col }}&amp;val={{ val }}&amp;page={{ page + 1 }}">older →</a>{% endif %}</p>
+{% endblock %}

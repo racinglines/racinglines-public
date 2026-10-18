@@ -1,0 +1,53 @@
+{% extends "base.html" %}{% from "_macros.html" import csrf, empty, flash, page_head, source_note %}
+{% block title %}Trade{% endblock %}
+{% block content %}
+{% call page_head("Trade by hand", "Formula 1 markets on Kalshi and Polymarket at their latest recorded prices. Fantasy trading is F1 only for now. Fantasy bucks only: nothing is sent to an exchange.") %}
+<a href="/history">History →</a>{% endcall %}
+{{ flash(msg) }}
+{% if not ready %}<div class="card"><h2>Not open yet</h2><p>Fantasy trading hasn't been set up on this site yet.</p></div>{% else %}
+
+{% if sel %}<div class="card accent">
+  <h2>{{ sel.group_title or sel.question }}</h2>
+  <p class="muted">{{ sel.event_title or "" }} · {{ sel.exchange|capitalize }} · {{ sel.kind|kind }}{% if sel.group_title and sel.question != sel.group_title %} · {{ sel.question }}{% endif %}{% if sel.sport_ok %} · {% if sel.closes_at %}closes {{ sel.closes_at|fmt }}{% elif sel.season %}season future, no close{% else %}closing time not known yet{% endif %}{% endif %}</p>
+  {% if not sel.sport_ok %}<p class="flash bad" role="status"><b>Fantasy trading is Formula 1 only for now.</b> This {{ (sel.sport or "")|upper }} market can't be traded here; you can follow its prices on <a href="/markets">Markets</a>.</p>
+  {% elif not book %}<p>No order book has been recorded for this market yet, so it can't be traded.</p>{% else %}
+  <p class="muted">Book recorded {{ book.ts|fmt }} (orders are refused once it is over {{ "%.0f"|format(max_age) }} minutes old). Cash: F${{ "{:,.2f}".format(cash) }}{% if pos %} · you hold {{ "%g"|format(pos.shares) }} {{ pos.side|upper }}, cost F${{ "%.2f"|format(pos.cost) }}{% endif %}.</p>
+  <div class="grid">
+    {% for name, bids, asks in [("YES", book.bids, book.asks), ("NO", book.no_bids, book.no_asks)] %}
+    <div><h3>{{ name }}</h3><table>
+      <thead><tr><th class="num">Bid</th><th class="num">Size</th><th class="num">Ask</th><th class="num">Size</th></tr></thead>
+      <tbody>{% for i in range([[bids|length, asks|length]|max, 6]|min) %}<tr>
+        <td class="num">{{ "%.2f"|format(bids[i][0]) if i < bids|length else "" }}</td><td class="num">{{ "%g"|format(bids[i][1]) if i < bids|length else "" }}</td>
+        <td class="num">{{ "%.2f"|format(asks[i][0]) if i < asks|length else "" }}</td><td class="num">{{ "%g"|format(asks[i][1]) if i < asks|length else "" }}</td>
+      </tr>{% endfor %}</tbody></table></div>
+    {% endfor %}
+  </div>
+  {% if is_demo_user %}<p class="muted">The demo accounts can look but not trade. Sign up to trade.</p>{% else %}
+  <form method="post" action="/fantasy/orders" class="order-form">{{ csrf() }}
+    <input type="hidden" name="market_link_id" value="{{ sel.id }}"><input type="hidden" name="client_key" value="{{ client_key }}">
+    <label>Action <select name="action"><option value="buy"{{ " selected" if action == "buy" }}>Buy</option><option value="sell"{{ " selected" if action == "sell" }}>Sell</option></select></label>
+    <label>Side <select name="side"><option value="yes"{{ " selected" if side == "yes" }}>YES</option><option value="no"{{ " selected" if side == "no" }}>NO</option></select></label>
+    <label>Shares <input name="shares" type="number" min="1" step="1" value="{{ shares }}" required></label>
+    <label>Limit price <input name="limit_price" type="number" min="0.01" max="0.99" step="0.01" value="{{ limit_price }}" required></label>
+    <button class="button" type="submit" name="preview" value="1">Preview</button>
+    <button class="button primary" type="submit">Place order</button>
+  </form>
+  {% if quote %}<p role="status">{% if quote.ok %}<b>If filled now:</b> {{ "buys" if action == "buy" else "sells" }} {{ "%g"|format(quote.filled) }}{% if quote.status == "partial" %} of {{ "%g"|format(quote.shares) }}{% endif %} {{ side|upper }} at an average of {{ "%.3f"|format(quote.avg_price) }}, F${{ "%.2f"|format(quote.notional) }}{% if quote.fee %} plus a fee of F${{ "%.2f"|format(quote.fee) }}{% endif %}: {{ "costs" if action == "buy" else "brings" }} F${{ "%.2f"|format(quote.total) }}{% if quote.status == "partial" %}; the rest isn't on the book at your limit{% endif %}. Book recorded {{ (quote.age_s / 60)|round|int }} min ago.{% else %}<b>If placed now it would be refused:</b> {{ quote.message }}{% endif %}</p>{% endif %}
+  <p class="muted">Fills at once against the book at your limit or better, or not at all; whatever isn't on the book is cancelled. Up to F${{ "%.0f"|format(max_stake) }} an order (shares x limit). Kalshi charges its taker fee (7% of C x P x (1 - P), rounded up to the cent, once per order); Polymarket none. Both fees are our assumption until confirmed.</p>{% endif %}
+  {% endif %}
+</div>{% endif %}
+
+<div class="card"><h2>Markets <span class="muted">{{ n }}</span></h2>
+<form method="get" action="/trade" class="tabs"><input name="q" value="{{ q }}" placeholder="Driver, team or race"> <button type="submit">Search</button>{% if q %} <a href="/trade">Clear</a>{% endif %}</form>
+{% if events %}{% for ev in events %}<h3>{{ ev.title }}{% if ev.start %} <span class="muted">{{ ev.start|fmt }}</span>{% endif %}</h3>
+<div class="scroll" data-rows="12"><table>
+<thead><tr><th>Market</th><th>Kind</th><th>Exchange</th><th class="num">YES bid</th><th class="num">YES ask</th><th></th></tr></thead>
+<tbody>{% for m in ev.markets %}<tr{% if sel and sel.id == m.id %} class="sel"{% endif %}>
+  <td class="wrap">{{ m.group_title or m.question }}</td><td>{{ m.kind|kind }}</td><td>{{ m.exchange|capitalize }}</td>
+  <td class="num">{{ "%.2f"|format(m.bid) if m.bid is not none else "–" }}</td><td class="num">{{ "%.2f"|format(m.ask) if m.ask is not none else "–" }}</td>
+  <td><a href="/trade?link={{ m.id }}{{ '&q=' ~ q|urlencode if q }}">Trade</a></td>
+</tr>{% endfor %}</tbody></table></div>{% endfor %}
+{% else %}{{ empty("No F1 markets with a recorded book in the last day" ~ (" match that search." if q else ".")) }}{% endif %}
+{{ source_note(note_sport, note_venues) }}</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,336 @@
+# The kart pack's synthetic world (racinglines/demo/mk_demo/generate.py): the INPUT of the data generator, not a schema. The generator
+# turns it into FastF1-shaped files (data/raw/f1/fastf1/<year>/ under the demo data folder) and exchange quotes, which the
+# real F1 ingest and the real commands then read. A Mario Kart grid under the real F1 schema: the drivers and teams
+# are made up, the tracks' lap times come from real Mario Kart 8 Deluxe records (below), and every pace, result and
+# price is invented. Play money; nothing is traded anywhere.
+
+title = "Mario Kart Grand Prix"
+seed = 20261011
+seasons = [2024, 2025, 2026]     # full seasons, then the season to forecast and run live
+rounds = 12                     # per season
+raced_2026 = 9                  # rounds 1-9 of 2026 have results; 10-12 are still to race
+last_raced = "2026-10-04"       # race day of 2026's last raced round; rounds are 14 days apart
+season_start = { 2024 = "2024-03-03", 2025 = "2025-03-02" }
+sprint_rounds = [3, 6, 10]      # Sprint weekends (FP1, Sprint Qualifying, Sprint, Qualifying, Race)
+race_laps = 24
+live_round = 9                  # exchange quotes on the live rehearsal (files/live/f1/demo-2026-09.toml) ...
+book_rounds = [10, 11]          # ... and on the pack's sportsbook book's events (book.toml)
+
+# Teams: car pace as a fraction of a lap slower than the best car, and how much faster sectors suit it (slope: the
+# deficit's change per unit of sector speed index, (km/h - 250) / 50; negative = faster where the track is fast). The
+# slopes come from the team's two drivers' Mario Kart 8 Deluxe stats (mariowiki's in-game statistics, as pasted by the
+# owner 2026-10-12): slope = -0.002 x (the pair's mean ground Speed minus ground Handling, less the field's mean), so
+# speed characters (Waluigi, Rosalina) gain on fast tracks and handling characters (Koopa Troopa, Shy Guy) on tight ones.
+[[teams]]
+id = "mushroom"
+name = "Mushroom Racing"
+pace = 0.000
+slope = -0.0026
+[[teams]]
+id = "koopa"
+name = "Koopa Kart Works"
+pace = 0.002
+slope = -0.0026
+[[teams]]
+id = "royal"
+name = "Royal Racing"
+pace = 0.003
+slope = 0.0004
+[[teams]]
+id = "kong"
+name = "Kong Jungle Racing"
+pace = 0.005
+slope = -0.0036
+[[teams]]
+id = "yoshi"
+name = "Yoshi Island GP"
+pace = 0.006
+slope = 0.0004
+[[teams]]
+id = "ghost"
+name = "Boo Mansion Racing"
+pace = 0.008
+slope = 0.0034
+[[teams]]
+id = "comet"
+name = "Comet Observatory"
+pace = 0.009
+slope = -0.0076
+[[teams]]
+id = "shell"
+name = "Shell Cup Team"
+pace = 0.011
+slope = 0.0124
+[[teams]]
+id = "pinball"
+name = "Waluigi Pinball Racing"
+pace = 0.012
+slope = -0.0096
+[[teams]]
+id = "shyguy"
+name = "Shy Guy Falls Racing"
+pace = 0.014
+slope = 0.0094
+
+# Drivers: offset to the team's car (fraction of a lap; negative = faster), retirement rate per race
+[[drivers]]
+name = "Mario"
+team = "mushroom"
+number = 1
+offset = -0.0015
+[[drivers]]
+name = "Luigi"
+team = "mushroom"
+number = 2
+offset = 0.0005
+[[drivers]]
+name = "Bowser"
+team = "koopa"
+number = 3
+offset = -0.0010
+[[drivers]]
+name = "Bowser Jr."
+team = "koopa"
+number = 4
+offset = 0.0015
+[[drivers]]
+name = "Peach"
+team = "royal"
+number = 5
+offset = -0.0008
+[[drivers]]
+name = "Daisy"
+team = "royal"
+number = 6
+offset = 0.0002
+[[drivers]]
+name = "Donkey Kong"
+team = "kong"
+number = 7
+offset = -0.0005
+[[drivers]]
+name = "Diddy Kong"
+team = "kong"
+number = 8
+offset = 0.0010
+[[drivers]]
+name = "Yoshi"
+team = "yoshi"
+number = 9
+offset = -0.0006
+[[drivers]]
+name = "Birdo"
+team = "yoshi"
+number = 10
+offset = 0.0008
+[[drivers]]
+name = "King Boo"
+team = "ghost"
+number = 11
+offset = -0.0004
+[[drivers]]
+name = "Dry Bones"
+team = "ghost"
+number = 12
+offset = 0.0012
+[[drivers]]
+name = "Rosalina"
+team = "comet"
+number = 13
+offset = -0.0012
+[[drivers]]
+name = "Metal Mario"
+team = "comet"
+number = 14
+offset = 0.0006
+[[drivers]]
+name = "Koopa Troopa"
+team = "shell"
+number = 15
+offset = 0.0000
+[[drivers]]
+name = "Lakitu"
+team = "shell"
+number = 16
+offset = 0.0014
+[[drivers]]
+name = "Waluigi"
+team = "pinball"
+number = 17
+offset = -0.0003
+[[drivers]]
+name = "Pink Gold Peach"
+team = "pinball"
+number = 18
+offset = 0.0009
+[[drivers]]
+name = "Shy Guy"
+team = "shyguy"
+number = 19
+offset = -0.0002
+[[drivers]]
+name = "Toadette"
+team = "shyguy"
+number = 20
+offset = 0.0011
+
+# Tracks, in calendar order: twelve Mario Kart 8 Deluxe courses (course = the game's name for it).
+#
+# Lap times are real. lap_s is the lap the best car runs on a clean lap, 5 % slower than the course's fastest recorded
+# lap (wr_lap_s), so no generated lap beats a record (tests/test_demo_store.py). wr_lap_s is the fastest lap split and
+# wr_race_s the fastest three-lap time among the 150cc world records in mkwrs.com's mk8dx_wrs.csv (downloaded
+# 2026-10-11), over every category. Mount Wario is one point-to-point run in three sections, not three laps: its lap_s
+# is 5 % over a third of the record run, and wr_lap_s is its fastest section. The generator reads only lap_s; the
+# records are kept beside it as the source.
+#
+# Then sector shares, trap speeds (km/h: I1, I2, finish line, speed trap), how hard it is to pass (hold_s: seconds lost
+# per grid place over a race), safety-car and rain chances. The speeds and hold_s are what the model's track features
+# see (sector speed index, places gained). profile = "pasted" tracks take them from the owner's course profiles
+# (corners and geometry, pasted 2026-10-12, unverified; library/engineering/2026-10-12-kart-world-data/tracks.md): wide,
+# sweeping sectors run about 290-305 km/h, medium ones about 235-260, tight corridors and hairpins about 190-215, and
+# narrow or very twisty courses lose more per grid place. profile = "estimated" tracks have no profile yet and keep the
+# first kart world's made-up values. The safety-car and rain chances are made up on every track.
+[[tracks]]
+name = "Mario Kart Stadium"
+course = "Mario Kart Stadium"
+profile = "pasted"
+lap_s = 31.9
+wr_lap_s = 30.399
+wr_race_s = 93.635
+shares = [0.32, 0.36, 0.32]
+speeds = [305, 290, 215, 330]
+hold_s = 0.8
+sc = 0.20
+rain = 0.1
+[[tracks]]
+name = "Moo Moo Meadows"
+course = "Wii Moo Moo Meadows"
+profile = "estimated"
+lap_s = 28.2
+wr_lap_s = 26.891
+wr_race_s = 83.204
+shares = [0.30, 0.38, 0.32]
+speeds = [270, 245, 290, 315]
+hold_s = 0.8
+sc = 0.15
+rain = 0.2
+[[tracks]]
+name = "Koopa Cape"
+course = "Wii Koopa Cape"
+profile = "estimated"
+lap_s = 39.6
+wr_lap_s = 37.730
+wr_race_s = 115.541
+shares = [0.34, 0.33, 0.33]
+speeds = [240, 215, 265, 300]
+hold_s = 1.6
+sc = 0.30
+rain = 0.1
+[[tracks]]
+name = "Royal Raceway"
+course = "N64 Royal Raceway"
+profile = "estimated"
+lap_s = 39.2
+wr_lap_s = 37.303
+wr_race_s = 114.148
+shares = [0.31, 0.34, 0.35]
+speeds = [300, 270, 310, 330]
+hold_s = 0.6
+sc = 0.15
+rain = 0.15
+[[tracks]]
+name = "Toad Harbor"
+course = "Toad Harbor"
+profile = "pasted"
+lap_s = 41.7
+wr_lap_s = 39.724
+wr_race_s = 121.429
+shares = [0.35, 0.33, 0.32]
+speeds = [270, 205, 240, 290]
+hold_s = 2.6
+sc = 0.55
+rain = 0.15
+[[tracks]]
+name = "Thwomp Ruins"
+course = "Thwomp Ruins"
+profile = "pasted"
+lap_s = 36.4
+wr_lap_s = 34.642
+wr_race_s = 106.750
+shares = [0.33, 0.35, 0.32]
+speeds = [215, 235, 225, 280]
+hold_s = 1.8
+sc = 0.30
+rain = 0.05
+[[tracks]]
+name = "Cheese Land"
+course = "GBA Cheese Land"
+profile = "pasted"
+lap_s = 33.3
+wr_lap_s = 31.737
+wr_race_s = 101.359
+shares = [0.33, 0.34, 0.33]
+speeds = [190, 200, 195, 260]
+hold_s = 2.4
+sc = 0.35
+rain = 0.0
+[[tracks]]
+name = "Mount Wario"
+course = "Mount Wario"
+profile = "pasted"
+lap_s = 34.9
+wr_lap_s = 22.417
+wr_race_s = 99.841
+shares = [0.25, 0.42, 0.33]
+speeds = [300, 195, 260, 315]
+hold_s = 1.6
+sc = 0.30
+rain = 0.15
+[[tracks]]
+name = "Bowser's Castle"
+course = "Bowser's Castle"
+profile = "estimated"
+lap_s = 40.2
+wr_lap_s = 38.270
+wr_race_s = 117.108
+shares = [0.34, 0.34, 0.32]
+speeds = [215, 200, 240, 290]
+hold_s = 2.2
+sc = 0.45
+rain = 0.05
+[[tracks]]
+name = "Rainbow Road"
+course = "Rainbow Road"
+profile = "estimated"
+lap_s = 40.8
+wr_lap_s = 38.860
+wr_race_s = 117.892
+shares = [0.33, 0.33, 0.34]
+speeds = [285, 260, 300, 335]
+hold_s = 0.9
+sc = 0.40
+rain = 0.0
+[[tracks]]
+name = "Wario Stadium"
+course = "DS Wario Stadium"
+profile = "estimated"
+lap_s = 37.6
+wr_lap_s = 35.804
+wr_race_s = 108.984
+shares = [0.33, 0.34, 0.33]
+speeds = [250, 228, 268, 302]
+hold_s = 1.3
+sc = 0.30
+rain = 0.1
+[[tracks]]
+name = "Peach Gardens"
+course = "DS Peach Gardens"
+profile = "estimated"
+lap_s = 36.4
+wr_lap_s = 34.652
+wr_race_s = 121.307
+shares = [0.31, 0.36, 0.33]
+speeds = [265, 240, 285, 312]
+hold_s = 1.5
+sc = 0.20
+rain = 0.25

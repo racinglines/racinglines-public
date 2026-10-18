@@ -1,0 +1,21 @@
+{% extends "base.html" %}{% from "_macros.html" import csrf, page_head %}
+{% block title %}Connect Claude{% endblock %}
+{% block content %}
+{{ page_head("Connect Claude") }}
+<div class="card">
+{% if not info %}
+<p>This sign-in link has expired or isn't valid. Start again from your MCP client (in Claude: reconnect the racinglines connector).</p>
+{% elif not allowed %}
+<p class="warning">MCP access is open to {{ roles }} accounts, and {{ user.username }} isn't one. Sign in as another account, or ask an admin.</p>
+<form method="post" action="/mcp/authorize">{{ csrf() }}<input type="hidden" name="req" value="{{ req }}">
+  <button name="decision" value="deny">Cancel</button></form>
+{% else %}
+<p><strong>{{ info.client }}</strong> wants to use racinglines as <strong>{{ user.username }}</strong>: read the app's data and queue Lab jobs under your name. It can't place orders, quote or settle.</p>
+<p class="muted">After you allow it, you'll go back to {{ info.redirect_host }}. You can disconnect it any time in Settings.</p>
+<form method="post" action="/mcp/authorize">{{ csrf() }}<input type="hidden" name="req" value="{{ req }}">
+  <button class="primary" name="decision" value="allow">Allow</button>
+  <button name="decision" value="deny">Cancel</button>
+</form>
+{% endif %}
+</div>
+{% endblock %}

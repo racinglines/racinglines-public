@@ -1,0 +1,29 @@
+{% extends "base.html" %}{% from "_macros.html" import table, csrf, page_head %}
+{% block title %}{{ u.username }}{% endblock %}
+{% block content %}
+{% set head_title %}{{ u.username }} <span class="role role-{{ u.role }}">{{ u.role }}</span>{% if not u.active %} <span class="bad">(inactive)</span>{% endif %}{% endset %}
+{{ page_head(head_title) }}
+{% include "_admin_nav.html" %}
+<p class="muted">{{ u.display_name }} · created {{ u.created_at|fmt }} · <a href="/admin/activity?user={{ u.username }}">activity</a> · <a href="/admin/users">all users</a></p>
+<div class="card"><h2>Strategy profiles</h2>
+<p class="muted">The Lab candidate whose paper signals this user sees on <a href="/strategy">Strategy</a> (recommendations only: nothing is sent to an exchange), one per sport and exchange. Each slot feeds the paper signals for its sport and exchange: Formula 1 through the session signals, other sports through the per-sport signals.</p>
+<div class="scroll"><table><thead><tr><th class="l">Sport · exchange</th><th class="l">Profile</th></tr></thead><tbody>
+{% for s in slots %}<tr><td class="l">{{ s.label }}</td><td class="l">{% if s.profile %}<b>{{ s.profile.name }}</b> <span class="muted">· {% if s.profile.members %}blend of {{ s.profile.members|map(attribute='code')|join(', ') }}{% else %}{{ s.profile.strategy }} · <code>{{ s.profile.settings.variant }}</code>{% endif %}</span>{% else %}<span class="muted">none</span>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>
+<form method="post" action="/admin/users/{{ u.id }}/profile" class="inline">{{ csrf() }}
+  <label><span>Sport · exchange</span><select name="slot">{% for s in slots %}<option value="{{ s.key }}">{{ s.label }}</option>{% endfor %}</select></label>
+  <label><span>Profile</span><select name="candidate_id">
+    <option value="">none</option>
+    <option value="basic" {{ 'selected' if profile and profile.basic }}>Your picks: this account's basic draw ({{ basic_draw }})</option>
+    {% for cb in combos %}<option value="{{ cb.code }}" {{ 'selected' if profile and profile.members and profile.name == cb.name }}>{{ cb.name }} (blend: {{ cb.members }})</option>{% endfor %}
+    {% for cd in candidates %}<option value="{{ cd.id }}" {{ 'selected' if profile and profile.candidate_id == cd.id }}>#{{ cd.id }} {{ cd.name }} ({{ cd.strategy }})</option>{% endfor %}
+  </select></label><button>Save</button>
+</form></div>
+{% if maker_summary %}<div class="card"><h2>As maker</h2><p><b>{{ maker_summary.markets }}</b> markets · <b>{{ maker_summary.bets }}</b> bets against · staked {{ maker_summary.staked|money }} · EV {{ maker_summary.ev|money }} · worst case <span class="bad">{{ maker_summary.worst|money }}</span> · settled P&amp;L {{ maker_summary.settled|money(true) }}</p>
+{{ table(book, ["id", "title", "fair_prob", "yes_price", "no_price", "status", "bets", "staked", "pnl_if_yes", "pnl_if_no", "ev"], {"id": ["/book/markets/", "id"]}) }}</div>{% endif %}
+{% if taker_summary %}<div class="card"><h2>As taker</h2><p><b>{{ taker_summary.bets }}</b> bets ({{ taker_summary.open }} open) · staked {{ taker_summary.staked|money }} · settled P&amp;L {{ taker_summary.pnl|money(true) }}</p>
+{{ table(bets, ["id", "created_at", "title", "maker", "side", "price", "stake", "payout", "status", "pnl"], {"title": ["/book/markets/", "market_id"]}) }}</div>{% endif %}
+<div class="card"><h2>Activity</h2><div class="scroll"><table><thead><tr><th class="l">When</th><th class="l">Action</th><th class="l">Detail</th><th class="l">IP</th></tr></thead><tbody>
+{% for e in activity %}<tr><td class="l">{{ e.ts|fmt }}</td><td class="l">{{ e.action }}</td><td class="wrap"><code>{{ e.detail if e.detail else "" }}</code></td><td class="l">{{ e.ip or "" }}</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endblock %}

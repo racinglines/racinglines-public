@@ -1,0 +1,37 @@
+[
+  {
+    "id": "step-1",
+    "title": "\ud83d\udce6 Install racinglines",
+    "command": "pip install -r requirements.txt && pip install -e .",
+    "about": "From a clone of the repository, in a virtualenv with Python 3.11+: the dependencies and the `racinglines` command.",
+    "record": false
+  },
+  {
+    "id": "step-2",
+    "title": "\ud83c\udf44 Build and look at the demo store",
+    "command": "racinglines db stats --demo",
+    "about": "The first --demo command builds the store (a few minutes, with a progress bar): the database, the synthetic files, the real ingest and the exchange links. Later commands reuse it.",
+    "record": true
+  },
+  {
+    "id": "step-3",
+    "title": "\ud83d\udcca Backtest the model",
+    "command": "racinglines model backtest kart --demo",
+    "about": "Every past race priced as of before the weekend, before qualifying and before the race, with track features on and off, scored against the results and against uniform and grid baselines.",
+    "record": true
+  },
+  {
+    "id": "step-4",
+    "title": "\ud83d\udd2e Forecast the rest of the season",
+    "command": "racinglines model forecast kart --demo --save",
+    "about": "The next races (Rainbow Road is a sprint weekend) and both championships; --save stores the run the book and the web app read.",
+    "record": true
+  },
+  {
+    "id": "step-5",
+    "title": "\ud83c\udfc1 Run a live private book",
+    "command": "racinglines live run kart/demo-2026-09 --demo --simulate --no-fetch",
+    "about": "Bowser's Castle (round 9) replayed on a simulated clock: the maker's book opens before practice, reprices after each session from the model's stage runs, 100 simulated takers trade against it, the book closes at lights out and settles from the results.",
+    "record": true
+  }
+]

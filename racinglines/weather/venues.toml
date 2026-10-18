@@ -1,0 +1,278 @@
+# F1 venue coordinates for weather lookups (docs/weather.md), keyed by the DB's venues.slug (exact keys).
+# Source: Jolpica F1 API (the Ergast successor), https://api.jolpi.ca/ergast/f1/circuits.json?limit=100, retrieved 2026-10-06; the raw response is
+# data/raw/weather/jolpica-circuits-2026-10-06.json on the owner's Mac. `circuit` is Jolpica's circuitId.
+
+["austin"]
+name = "Circuit of the Americas"
+circuit = "americas"
+lat = 30.1328
+lon = -97.6411
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["baku"]
+name = "Baku City Circuit"
+circuit = "baku"
+lat = 40.3725
+lon = 49.8533
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["barcelona"]
+name = "Circuit de Barcelona-Catalunya"
+circuit = "catalunya"
+lat = 41.57
+lon = 2.26111
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["budapest"]
+name = "Hungaroring"
+circuit = "hungaroring"
+lat = 47.5789
+lon = 19.2486
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["imola"]
+name = "Autodromo Enzo e Dino Ferrari"
+circuit = "imola"
+lat = 44.3439
+lon = 11.7167
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["istanbul"]
+name = "Istanbul Park"
+circuit = "istanbul"
+lat = 40.9517
+lon = 29.405
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["jeddah"]
+name = "Jeddah Corniche Circuit"
+circuit = "jeddah"
+lat = 21.6319
+lon = 39.1044
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["kuala-lumpur"]
+name = "Sepang International Circuit"
+circuit = "sepang"
+lat = 2.76083
+lon = 101.738
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+note = "Sepang (2026-16, the Bahrain GP moved to Sepang)"
+
+["las-vegas"]
+name = "Las Vegas Strip Street Circuit"
+circuit = "vegas"
+lat = 36.1147
+lon = -115.173
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["le-castellet"]
+name = "Circuit Paul Ricard"
+circuit = "ricard"
+lat = 43.2506
+lon = 5.79167
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["lusail"]
+name = "Lusail International Circuit"
+circuit = "losail"
+lat = 25.49
+lon = 51.4542
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["madrid"]
+name = "Madring"
+circuit = "madring"
+lat = 40.46528
+lon = -3.61528
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["marina-bay"]
+name = "Marina Bay Street Circuit"
+circuit = "marina_bay"
+lat = 1.2914
+lon = 103.864
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["melbourne"]
+name = "Albert Park Grand Prix Circuit"
+circuit = "albert_park"
+lat = -37.8497
+lon = 144.968
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["mexico-city"]
+name = "Autódromo Hermanos Rodríguez"
+circuit = "rodriguez"
+lat = 19.4042
+lon = -99.0907
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["miami"]
+name = "Miami International Autodrome"
+circuit = "miami"
+lat = 25.9581
+lon = -80.2389
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["miami-gardens"]
+name = "Miami International Autodrome"
+circuit = "miami"
+lat = 25.9581
+lon = -80.2389
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+note = "same circuit as `miami` (the DB holds both spellings)"
+
+["monaco"]
+name = "Circuit de Monaco"
+circuit = "monaco"
+lat = 43.7347
+lon = 7.42056
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["monte-carlo"]
+name = "Circuit de Monaco"
+circuit = "monaco"
+lat = 43.7347
+lon = 7.42056
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+note = "same circuit as `monaco` (the DB holds both spellings)"
+
+["montreal"]
+name = "Circuit Gilles Villeneuve"
+circuit = "villeneuve"
+lat = 45.5
+lon = -73.5228
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["monza"]
+name = "Autodromo Nazionale di Monza"
+circuit = "monza"
+lat = 45.6156
+lon = 9.28111
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["mugello"]
+name = "Autodromo Internazionale del Mugello"
+circuit = "mugello"
+lat = 43.9975
+lon = 11.3719
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["nurburgring"]
+name = "Nürburgring"
+circuit = "nurburgring"
+lat = 50.3356
+lon = 6.9475
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["portimao"]
+name = "Autódromo Internacional do Algarve"
+circuit = "portimao"
+lat = 37.227
+lon = -8.6267
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["sakhir"]
+name = "Bahrain International Circuit"
+circuit = "bahrain"
+lat = 26.0325
+lon = 50.5106
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["sao-paulo"]
+name = "Autódromo José Carlos Pace"
+circuit = "interlagos"
+lat = -23.7036
+lon = -46.6997
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["shanghai"]
+name = "Shanghai International Circuit"
+circuit = "shanghai"
+lat = 31.3389
+lon = 121.22
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["silverstone"]
+name = "Silverstone Circuit"
+circuit = "silverstone"
+lat = 52.0786
+lon = -1.01694
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["sochi"]
+name = "Sochi Autodrom"
+circuit = "sochi"
+lat = 43.4057
+lon = 39.9578
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["spa-francorchamps"]
+name = "Circuit de Spa-Francorchamps"
+circuit = "spa"
+lat = 50.4372
+lon = 5.97139
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["spielberg"]
+name = "Red Bull Ring"
+circuit = "red_bull_ring"
+lat = 47.2197
+lon = 14.7647
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["suzuka"]
+name = "Suzuka Circuit"
+circuit = "suzuka"
+lat = 34.8431
+lon = 136.541
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["yas-island"]
+name = "Yas Marina Circuit"
+circuit = "yas_marina"
+lat = 24.4672
+lon = 54.6031
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"
+
+["zandvoort"]
+name = "Circuit Park Zandvoort"
+circuit = "zandvoort"
+lat = 52.3888
+lon = 4.54092
+source = "https://api.jolpi.ca/ergast/f1/circuits.json?limit=100"
+retrieved = "2026-10-06"

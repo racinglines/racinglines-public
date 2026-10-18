@@ -1,0 +1,19 @@
+{% extends "base_public.html" %}
+{% block title %}Sign in · racinglines{% endblock %}
+{% block content %}
+{# Sign in, on its own page since the landing dropped its form (owner, 2026-10-12). The form still posts to /login. #}
+<h1><a class="lp-brand" href="/"><img src="/static/brand/logo.svg" alt="" width="32" height="32"><span>racing<b>lines</b></span></a></h1>
+<p class="sub">Fair prices and market making for race sports.</p>
+{% if error == "throttled" %}<p class="bad" role="alert">Too many failed sign-ins. Wait 15 minutes and try again.</p>{% elif error %}<p class="bad" role="alert">Wrong username or password.</p>{% endif %}
+<form method="post" action="/login" class="card">
+  <input type="hidden" name="next" value="{{ next }}">
+  <label><span>Username</span><input name="username" autocomplete="username" required autofocus></label>
+  <label><span>Password</span><input name="password" type="password" autocomplete="current-password" required></label>
+  <button class="primary mt">Sign in</button>
+  {% if signup_on() %}<p class="hint"><a href="/forgot">Forgot your password?</a></p>{% endif %}
+</form>
+<p class="or">or try the demo, no account needed</p>
+<form method="post" action="/login" class="demo-one"><input type="hidden" name="username" value="maker"><input type="hidden" name="password" value="password"><input type="hidden" name="next" value="{{ next }}">
+  <button class="maker"><b>Try the demo</b><span>Fair prices, quotes, every strategy and the Lab</span></button></form>
+<p class="confused">{% if signup_on() %}<a href="/signup">New here? Sign up</a> · {% endif %}<a href="/">Home</a></p>
+{% endblock %}

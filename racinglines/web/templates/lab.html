@@ -1,0 +1,26 @@
+{% extends "base.html" %}{% from "_macros.html" import csrf, flash, page_head %}
+{% block title %}Lab{% endblock %}
+{% block content %}
+{% include "_lab_nav.html" %}
+{{ page_head("Lab", "Test the model and the trading strategies before money is at risk. Everything here prices with a hard as-of cutoff (no future data); forecasts launched here are scenarios and only change live prices when promoted.") }}
+{{ flash(msg) }}
+<ol class="lab-steps">
+  <li><b>Run</b> a job: a strategy sweep replays a season on recorded prices; a backtest scores the model against results.</li>
+  <li><b>Jobs</b> shows it running and when it's done.</li>
+  <li><b>Edge Finder</b> (below) compares the saved sweeps weekend by weekend.</li>
+</ol>
+{% if is_demo(user) %}<p class="legend">Demo sessions can compare saved runs and change Edge Finder selections for this session; launching jobs is off.</p>{% endif %}
+{% if brier and brier.win and brier.grid %}<div class="kpis"><div class="kpi"><div class="l">F1 model vs grid-only (win, after quali)</div><div class="v {{ 'bad' if brier.win > brier.grid else 'good' }}">{{ "%+.4f"|format(brier.win - brier.grid) }}</div><div class="s">Brier difference, lower is better</div></div></div>{% endif %}
+<div id="lab" data-open-now='{{ open_now|tojson }}'>
+<form id="lab-csrf" hidden>{{ csrf() }}</form>
+
+<div class="card" id="edge">{% include "lab_edge.html" %}</div>
+
+{# The other sections load on demand: each box fetches /lab/section/<key> the first time it is opened (app.js
+   fires its "open" event; the jobs box reloads on every open, since whose jobs it shows is a browser setting). #}
+<div class="section-tabs" role="group" aria-label="Lab sections">{% for key, label in sections %}<button type="button" data-section="{{ key }}" aria-pressed="false">{{ label }}</button>{% endfor %}</div>
+{% for key, label in sections %}<div class="card lab-section" id="{{ key }}" hidden
+     hx-get="{{ '/lab/section/jobs' if key == 'jobs' else '/lab/section/' ~ key ~ query }}" hx-trigger="{{ 'open' if key == 'jobs' else 'open once' }}" hx-swap="innerHTML"><p class="muted">Loading {{ label|lower }}…</p></div>
+{% endfor %}
+</div>
+{% endblock %}

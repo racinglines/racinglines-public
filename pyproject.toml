@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=77"]       # 77: the SPDX `license` string
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "racinglines"
+version = "1.0.0"
+description = "Fair prices for Formula 1 prediction markets, and the tools to test trading strategies against them"
+license = "MIT"                    # plain MIT on PyPI; the public export ships the plain MIT LICENSE
+license-files = ["LICENSE"]
+readme = "README.md"            # the PyPI page; the public export writes its own
+requires-python = ">=3.11"
+# the core install: the models, the CLI and `racinglines check --offline --no-db` (the full pinned environment:
+# pip install -r requirements.txt). A command that needs more names the package to add (racinglines/cli/__init__.py).
+dependencies = ["rich>=13", "numpy>=2", "pandas>=2.2", "scikit-learn>=1.5", "SQLAlchemy>=2"]
+
+[project.optional-dependencies]
+# pip install racinglines[web]: everything the public release runs: a local database, the kart demo store, the live
+# book and its reports, the web app and its live viewer, F1 timing (FastF1) and the downhill sim's ChronoRace results
+web = ["psycopg[binary]>=3.2", "alembic>=1.13", "fastapi>=0.115", "uvicorn[standard]>=0.30", "python-multipart>=0.0.9",
+       "Jinja2>=3.1", "httpx>=0.27", "pyarrow>=16", "Markdown>=3.6", "matplotlib>=3.8", "fastf1>=3.4", "pandas<3",
+       "requests>=2.31", "beautifulsoup4>=4.12", "lxml>=5"]
+
+[project.scripts]
+racinglines = "racinglines.cli:main"
+# the file list (packages, templates, the bundled sports/markets/exchanges configs): setup.py
+
+[project.urls]                    # the PyPI sidebar
+Homepage = "https://racinglines.bet"
+Documentation = "https://racinglines.bet/docs"
+Quickstart = "https://racinglines.bet/term"

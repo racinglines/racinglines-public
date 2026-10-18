@@ -1,0 +1,48 @@
+[
+  {
+    "id": "f1-singapore-2",
+    "title": "Profile A's picks on Polymarket, into a book",
+    "command": "racinglines strategy signals f1 --profile A --event 2026-17 --venue polymarket --asof 2026-10-09T10:05Z --no-fetch --book singapore-polymarket.toml",
+    "about": "Friday, after first practice: the core taker profile replays the weekend up to that moment against Polymarket's recorded order book, and every entry it would have taken is written to a book file, in dollars, at the price it was taken at. (Its Kalshi replay took no trades at that point, so Kalshi is left out.)",
+    "record": true,
+    "section": "F1 Singapore: pre-race picks",
+    "group": "polymarket",
+    "optional": true
+  },
+  {
+    "id": "f1-singapore-4",
+    "title": "Price the Polymarket book",
+    "command": "racinglines book price singapore-polymarket.toml --asof 2026-10-09T10:05Z",
+    "about": "Each pick against the model's fair price and the exchange's last tape price at that moment: the edge it was taken on.",
+    "record": true,
+    "section": "F1 Singapore: pre-race picks",
+    "group": "polymarket"
+  },
+  {
+    "id": "f1-singapore-6",
+    "title": "After Sprint Qualifying: Polymarket",
+    "command": "racinglines book price singapore-polymarket.toml --asof 2026-10-09T13:50Z",
+    "about": "The Polymarket picks after Sprint Qualifying.",
+    "record": true,
+    "section": "F1 Singapore: through the sessions",
+    "group": "polymarket"
+  },
+  {
+    "id": "f1-singapore-8",
+    "title": "After the Sprint: Polymarket",
+    "command": "racinglines book price singapore-polymarket.toml --asof 2026-10-10T10:20Z",
+    "about": "The Polymarket picks after the Sprint.",
+    "record": true,
+    "section": "F1 Singapore: through the sessions",
+    "group": "polymarket"
+  },
+  {
+    "id": "f1-singapore-10",
+    "title": "After Qualifying: Polymarket",
+    "command": "racinglines book price singapore-polymarket.toml --asof 2026-10-10T15:05Z",
+    "about": "The Polymarket picks after Qualifying.",
+    "record": true,
+    "section": "F1 Singapore: through the sessions",
+    "group": "polymarket"
+  }
+]

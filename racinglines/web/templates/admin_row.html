@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% from "_macros.html" import csrf, flash, page_head %}
+{% block title %}{{ table_name }} row{% endblock %}
+{% block content %}
+{% set head_title %}<a href="/admin/db">Database</a> / <a href="/admin/db/{{ table_name }}">{{ table_name }}</a> / {{ pk }}{% endset %}
+{{ page_head(head_title) }}
+{% include "_admin_nav.html" %}
+{{ flash(request.query_params.get('msg')) }}
+<form method="post" action="/admin/db/{{ table_name }}/row?{{ pk_query }}" class="card">{{ csrf() }}
+<div class="scroll"><table><tbody>
+{% for f in fields %}<tr><td class="l"><b>{{ f.name }}</b><br><span class="muted">{{ f.type }}{% if f.nullable %}, nullable{% endif %}{% if f.pk %}, primary key{% endif %}</span></td>
+<td class="l">{% if f.pk %}<code>{{ f.value }}</code>{% elif f.value|length > 80 or 'JSON' in f.type or 'ARRAY' in f.type %}<textarea name="{{ f.name }}" aria-label="{{ f.name }}">{{ f.value }}</textarea>{% else %}<input name="{{ f.name }}" value="{{ f.value }}" class="w100" aria-label="{{ f.name }}">{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>
+<p class="muted">Empty = NULL for nullable columns. JSON columns take JSON.</p>
+<button class="primary" name="action" value="save">Save changes</button>
+<span class="mt"><label class="inline"><input type="checkbox" name="confirm" value="yes"> confirm delete</label> <button class="danger" name="action" value="delete">Delete row</button></span>
+</form>
+{% endblock %}

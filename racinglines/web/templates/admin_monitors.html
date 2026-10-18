@@ -1,0 +1,25 @@
+{% extends "base.html" %}{% from "_macros.html" import page_head, empty, pnl %}
+{% block title %}Lab monitors{% endblock %}
+{% block content %}
+{{ page_head("Lab monitors", "Every F1 taker candidate followed live on Polymarket to the end of the season, one hidden paper account each") }}
+{% include "_admin_nav.html" %}
+{% if not monitors %}
+{{ empty("No Lab monitors yet. The " ~ prefix ~ "<candidate id> accounts are made by `racinglines strategy profiles f1 --monitors`.") }}
+{% else %}
+<p class="muted">Paper record on Polymarket (settled, else marked to the market), the same as the MCP tool <code>track_record(user="{{ prefix }}&lt;id&gt;")</code>. Not on the leaderboard, no alerts.</p>
+<div class="card"><table><thead><tr><th class="l">Candidate</th><th class="l">Account</th><th>Weekends</th><th>Up</th><th>P&amp;L</th><th>Trades taken</th><th>Open</th><th class="l">Last event</th></tr></thead><tbody>
+{% for m in monitors %}<tr>
+<td class="l">{{ m.name }}</td><td class="l"><a href="/admin/users/{{ m.id }}">{{ m.username }}</a></td>
+<td>{{ m.weekends }}</td><td>{{ m.up }}</td><td>{{ pnl(m.pnl) if m.weekends else "–" }}</td><td>{{ m.taken }}</td><td>{{ m.open }}</td>
+<td class="l">{% if m.last %}{{ m.last.event_name or m.last.event_key }}{% if m.last.start_date %} <span class="muted">{{ m.last.start_date }}</span>{% endif %}{% else %}<span class="muted">none yet</span>{% endif %}</td>
+</tr>{% endfor %}
+</tbody></table></div>
+{% for m in monitors if m.record %}
+<details class="card"><summary><b>{{ m.name }}</b> <span class="muted">{{ m.username }} · {{ m.weekends }} weekends</span></summary>
+<table><thead><tr><th class="l">Event</th><th class="l">Date</th><th class="l">Strategy</th><th>Signals</th><th>Taken</th><th>Positions</th><th>P&amp;L</th><th class="l">State</th></tr></thead><tbody>
+{% for r in m.record|reverse %}<tr><td class="l">{{ r.event_name or r.event_key }}</td><td class="l">{{ r.start_date or "" }}</td><td class="l">{{ r.strategy or "" }}</td>
+<td>{{ r.signals }}</td><td>{{ r.taken }}</td><td>{{ r.positions }}</td><td>{{ pnl(r.pnl) }}</td><td class="l">{{ "settled" if r.settled else "open" }}{% if r.backfill %} <span class="muted">backfill</span>{% endif %}</td></tr>{% endfor %}
+</tbody></table></details>
+{% endfor %}
+{% endif %}
+{% endblock %}

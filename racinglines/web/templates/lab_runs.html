@@ -1,0 +1,6 @@
+{% from "_macros.html" import empty, csrf %}
+<h2>All runs <span class="muted">({{ recent|length }} most recent)</span></h2>
+{% if recent %}<div class="scroll"><table><thead><tr><th>Run</th><th class="l">Kind</th><th class="l">Competition</th><th>Season</th><th class="l">Event / cutoff</th><th>Created</th><th></th></tr></thead><tbody>
+{% for r in recent %}<tr class="{{ 'muted' if r.superseded }}"><td><a href="{{ r.link }}">#{{ r.id }}</a></td><td class="l">{{ r.kind }}</td><td class="l">{{ r.competition }}</td>
+<td>{{ r.season or "" }}</td><td class="l">{{ r.event_key }} {{ r.cutoff }}</td><td>{{ r.created_at|fmt }}</td><td>{{ "superseded" if r.superseded }}</td></tr>{% endfor %}
+</tbody></table></div>{% else %}{{ empty("No runs yet.") }}{% endif %}

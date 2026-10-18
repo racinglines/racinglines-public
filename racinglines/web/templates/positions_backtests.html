@@ -1,0 +1,26 @@
+{% from "_macros.html" import chart, empty, pnl_cls %}
+{% if years and sports %}
+<form method="get" action="/positions/backtests" class="toolbar" hx-get="/positions/backtests"
+  hx-target="#positions-backtests-result" hx-swap="innerHTML">
+  <label><span>Season</span><select name="year">{% for y in years %}<option value="{{ y }}" {{ 'selected' if y == year }}>{{ y }}</option>{% endfor %}</select></label>
+  <label><span>Sport</span><select name="sport">{% for s in sports %}<option value="{{ s }}" {{ 'selected' if s == sport }}>{{ sport_names.get(s, s) }}</option>{% endfor %}</select></label>
+  <label><span>Venue</span><select name="venue">{% for v in venues %}<option value="{{ v }}" {{ 'selected' if v == venue }}>{{ venue_names.get(v, v) }}</option>{% endfor %}</select></label>
+  <label><span>Saved setup</span><select name="config">{% for x in configs %}
+    <option value="{{ x.key }}" {{ 'selected' if x.key == config }}>{{ "T1/A · " if x.key == t1_key else "" }}{{ x.label }}</option>
+  {% endfor %}</select></label>
+  <label><span>Strategy</span><select name="strategy">{% for k in strategies %}
+    <option value="{{ k }}" {{ 'selected' if k == strategy }}>{{ strategy_labels[k] }}</option>
+  {% endfor %}</select></label>
+  <button>Show saved P&amp;L</button>
+</form>
+{% if selection_note %}<p class="legend" role="status">{{ selection_note }}</p>{% endif %}
+{% if backtest_chart %}<div class="plot">{{ chart(backtest_chart) }}
+<p class="legend">{% if config == t1_key %}T1/A settings · {% endif %}{{ config_name }} · {{ strategy_name }} · saved sweep <a href="/lab/runs/{{ run_id }}">#{{ run_id }}</a>.
+Backtested cumulative P&amp;L: <b class="{{ pnl_cls(total) }}">{{ total|money(true) }}</b> over {{ traded }} traded weekends.
+This is a historical simulation, separate from the paper positions and P&amp;L above.{% if config == t1_key %} The value uses this sweep's saved trade sizing, not the separately reported flat-size taker-resweep score.{% endif %}</p></div>
+{% elif missing_dates %}<p class="legend" role="status">The saved sweep has P&amp;L for {{ traded }} weekends, but {{ missing_dates|length }} event date{{ "s are" if missing_dates|length != 1 else " is" }} missing from the exact event calendar keys ({{ missing_dates|join(", ") }}). No curve was drawn; check the source data.</p>
+{% elif configs %}<p class="legend" role="status">No traded-weekend P&amp;L is saved for this setup and strategy. See the full-season results in <a href="/lab">Edge Finder</a>.</p>
+{% else %}<p class="legend" role="status">No complete-season strategy sweep is saved for this season, sport and venue.
+{% if sport == "f1" and venue == "polymarket" %}T1/A's profile summary is documented in Lab, but no complete saved sweep is available for this selection to draw a weekend-by-weekend curve.{% endif %}
+{% if sweep_job %} To generate results, <a href="/lab?job={{ sweep_job }}&amp;venue={{ venue }}#run">run a strategy sweep</a>.{% else %} See <a href="/lab">Lab</a> for supported backtests.{% endif %}</p>{% endif %}
+{% else %}{{ empty("No saved full-season strategy sweeps yet. Start one from the Lab when this sport has a sweep form.") }}{% endif %}

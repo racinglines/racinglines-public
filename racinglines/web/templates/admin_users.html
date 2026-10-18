@@ -1,0 +1,47 @@
+{% extends "base.html" %}{% from "_macros.html" import csrf, flash, page_head %}
+{% block title %}Users{% endblock %}
+{% block content %}
+{{ page_head("Users") }}
+{% include "_admin_nav.html" %}
+{{ flash(msg) }}
+{% if onetime %}<div class="card"><h2>Temporary password for {{ onetime[0] }}</h2>
+<p class="onetime">{{ onetime[1] }}</p>
+<p class="muted">Shown once: it is stored only as a hash and is not in any log. Send it to {{ onetime[0] }} and ask
+them to sign in with it; reloading this page will not show it again.</p>
+<textarea id="onetime-email" class="onetime-email" rows="14" readonly>Subject: Your racinglines sign-in details
+
+Hi {{ onetime[0] }},
+
+Your racinglines password has been reset. Sign in at https://racinglines.bet/signin with:
+
+Username: {{ onetime[0] }}
+Temporary password: {{ onetime[1] }}
+
+Please keep it private, and reply to this email if you need a different one.
+
+Thanks,
+racinglines</textarea>
+<p><button type="button" class="primary" id="onetime-copy" data-copy="#onetime-email" data-copied="#onetime-copied" data-copied-text="Copied: paste it into a new email.">Copy email</button> <span id="onetime-copied" class="muted"></span></p>
+</div>{% endif %}
+<div class="card"><h2>Add a user</h2>
+<form method="post" action="/admin/users">{{ csrf() }}
+  <label><span>Username</span><input name="username" required size="14" autocomplete="off"></label>
+  <label><span>Display name</span><input name="display_name" size="16"></label>
+  <label><span>Role</span><select name="role">{% for r in roles %}<option {% if r == 'basic' %}selected{% endif %}>{{ r }}</option>{% endfor %}</select></label>
+  <label><span>Password ({{ pw_min }}+ chars)</span><input name="password" type="password" required size="14" minlength="{{ pw_min }}" autocomplete="new-password"></label>
+  <button class="primary">Create</button></form></div>
+<div class="card"><h2>Accounts</h2>{% if ledger %}<p class="muted">Every account starts with {{ "{:,}".format(grant) }} fantasy bucks (accounts.fantasy_ledger). Passwords are stored as hashes only: reset one, never read it.</p>{% endif %}<div class="scroll"><table>
+<thead><tr><th class="l">User</th><th class="l">Role</th><th>Active</th><th class="l">Display name</th><th class="l">New password</th><th></th><th class="l">Last seen</th><th>Markets</th><th>Bets placed</th>{% if ledger %}<th>Fantasy bucks</th>{% endif %}<th></th><th></th></tr></thead><tbody>
+{% for u in users %}<tr>
+<td class="l"><a href="/admin/users/{{ u.id }}">{{ u.username }}</a></td>
+<td class="l"><select name="role" form="u{{ u.id }}" aria-label="Role for {{ u.username }}">{% for r in roles %}<option {% if r == u.role %}selected{% endif %}>{{ r }}</option>{% endfor %}</select></td>
+<td><input type="checkbox" name="active" value="1" form="u{{ u.id }}" aria-label="Active: {{ u.username }}" {% if u.active %}checked{% endif %}></td>
+<td class="l"><input name="display_name" value="{{ u.display_name or '' }}" size="14" form="u{{ u.id }}" aria-label="Display name for {{ u.username }}"></td>
+<td class="l"><input name="new_password" type="password" size="12" placeholder="unchanged" form="u{{ u.id }}" aria-label="New password for {{ u.username }}"></td>
+<td><button form="u{{ u.id }}">Save</button><form id="u{{ u.id }}" method="post" action="/admin/users/{{ u.id }}">{{ csrf() }}</form></td>
+<td class="l">{{ u.last_seen|fmt }}</td><td>{{ u.markets_made }}</td><td>{{ u.bets_placed }}</td>
+{% if ledger %}<td>{{ "{:,.0f}".format(balances.get(u.id, 0)) }}</td>{% endif %}
+<td><form method="post" action="/admin/users/{{ u.id }}/reset-password">{{ csrf() }}<button title="Set a random one-time password and show it here once">Reset password</button></form></td>
+<td><form method="post" action="/admin/users/{{ u.id }}/delete" data-confirm="Remove {{ u.username }}? This cannot be undone.">{{ csrf() }}<button class="danger" title="Only accounts with no markets or bets; otherwise untick Active">Remove</button></form></td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endblock %}

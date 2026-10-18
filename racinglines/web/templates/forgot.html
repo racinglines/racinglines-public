@@ -1,0 +1,26 @@
+{% extends "base_public.html" %}
+{% block title %}Forgot password · racinglines{% endblock %}
+{% block content %}
+<h1>racinglines</h1>
+<p class="sub">Fair prices and market making for race sports.</p>
+<div class="card signup-form">
+  <p><b>Forgot your password?</b> Send us a reset request, from the email on your account if it has one (older
+  accounts don't), and we'll reply with a temporary password.</p>
+  <label><span>Your username</span><input id="forgot-user" autocomplete="username" maxlength="30"></label>
+  <textarea id="forgot-email" class="onetime-email" data-support="{{ support }}" rows="11" readonly>To: {{ support }}
+Subject: Password reset request
+
+Hi racinglines,
+
+Please reset the password for my account.
+
+Username: YOUR USERNAME
+
+Thanks</textarea>
+  <p class="mt"><a id="forgot-send" class="button primary" href="mailto:{{ support }}?subject=Password%20reset%20request">Open in my email app</a>
+  <button type="button" data-copy="#forgot-email" data-copied="#forgot-copied" data-copied-text="Copied.">Copy email</button> <span id="forgot-copied" class="muted"></span></p>
+  <p class="hint">Or write to <b>{{ support }}</b> yourself with your username. We never ask for your password.</p>
+</div>
+<p class="confused"><a href="/signin">Back to sign in</a></p>
+
+{% endblock %}

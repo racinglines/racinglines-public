@@ -1,0 +1,51 @@
+{% extends "base.html" %}{% from "_macros.html" import page_head, flash, csrf %}
+{% macro die() %}<svg class="die" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="8" cy="8" r="1.6" fill="currentColor"/><circle cx="16" cy="8" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="8" cy="16" r="1.6" fill="currentColor"/><circle cx="16" cy="16" r="1.6" fill="currentColor"/></svg>{% endmacro %}
+{% block title %}Pick a strategy{% endblock %}
+{% block content %}
+{% include "_lab_nav.html" %}
+{# web/strategy_pick.py: the user's own pick (no strategy runs until there is one); admins assign others on /admin/users/<id>. #}
+{% call page_head("Pick a strategy", "The strategy this account paper-trades at the exchange's real prices: Formula 1 on Polymarket today, other sports and exchanges coming soon. Nothing is sent to an exchange, and you can change it between race weekends.") %}
+<a href="/strategy">← Strategy</a>{% endcall %}
+{{ flash(msg) }}
+{% if slots|length > 1 %}<nav class="pick-slots" aria-label="Sport and exchange">{% for x in slots %}
+  {% if x.open %}<span aria-current="page"><b>{{ x.label }}</b><span class="muted">{{ profile.name if profile else "nothing yet" }}</span></span>
+  {% else %}<span class="soon" title="Strategies for {{ x.label }} are on the way: today only F1 on Polymarket gets live calls."><b>{{ x.label }}</b><span class="muted">coming soon</span></span>{% endif %}{% endfor %}</nav>{% endif %}
+<p class="pick-now">Running now: <b>{{ profile.name if profile else "nothing yet" }}</b>{% if not profile %}. Pick one below to start getting calls.{% endif %}</p>
+{% if demo_locked %}<p class="muted">This is a demo account: it keeps the strategy it shows, so the page is read-only here.</p>
+{% elif weekend_note %}<p class="flash bad" role="status">{{ weekend_note }}</p>{% endif %}
+<form method="post" action="/strategy/pick" class="pick">
+  {{ csrf() }}
+  <fieldset aria-label="Strategy"{{ ' disabled' if locked }}>
+  <input type="hidden" name="rolled" value="" data-rolled>
+  {% if opts|selectattr("sliders")|list %}<div class="pick-dice" data-dice hidden>
+    <button type="button" class="dice-btn" data-roll-any>{{ die() }} Roll a strategy</button>
+    <label class="pick-spread"><span>How far a roll can go from each strategy's own settings: <b data-spread-out>50%</b></span>
+      <input type="range" min="0.1" max="1" step="0.1" value="0.5" data-spread></label>
+  </div>{% endif %}
+  {% for o in opts %}
+  <label class="pick-opt">
+    <input type="radio" name="code" value="{{ o.code }}"{{ ' checked' if o.code == chosen }}>
+    <span class="pick-head"><b>{{ o.name }}</b>
+      {% if o.rank %}<span class="pill">#{{ o.rank }} on the shortlist</span>{% endif %}
+      {% if o.code == now %}<span class="pill good">running</span>{% endif %}
+      <span class="pill no">{{ "maker" if o.kind == "maker" else ("blend" if o.code == "TB" else "taker") }}</span></span>
+    <span class="pick-why">{{ o.why }}</span>
+    {% if o.sliders or o.pre is not none %}
+    <span class="pick-tune">
+      {% for s in o.sliders %}
+      <span class="pick-slider"><span>{{ s.label }}: <b data-out="{{ o.code }}:{{ s.name }}">{% if s.unit == "pts" %}{{ (s.value * 100)|round|int }} pts{% elif s.unit == "$" %}${{ s.value|int }}{% else %}{{ s.value|int }} {{ s.unit }}{% endif %}</b></span>
+        <input type="range" name="{{ o.code }}:{{ s.name }}" min="{{ s.lo }}" max="{{ s.hi }}" step="{{ s.step }}" value="{{ s.value }}" data-unit="{{ s.unit }}" data-base="{{ s.base }}"></span>
+      {% endfor %}
+      {% if o.pre is not none %}<span class="pick-toggle"><input type="checkbox" name="{{ o.code }}:pre_weekend" value="1"{{ ' checked' if o.pre }}> Also trade before the weekend starts (before FP1)</span>{% endif %}
+      <button type="button" class="dice-btn" data-roll hidden>{{ die() }} Roll these settings</button>
+      <span class="legend">Moving or rolling these makes it your own version ("adjusted"): the results quoted above were for the settings it starts with.</span>
+    </span>
+    {% endif %}
+  </label>
+  {% endfor %}
+  <p><button type="submit" class="primary">Run this strategy</button></p>
+  </fieldset>
+</form>
+{% if profile and not locked %}<form method="post" action="/strategy/pick" class="inline">{{ csrf() }}<input type="hidden" name="code" value="none">
+  <button type="submit">Stop: run no strategy</button></form>{% endif %}
+{% endblock %}

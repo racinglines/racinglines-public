@@ -1,0 +1,11 @@
+{# Order books recorded per venue (board.recorder_status): whatever arrived, and a marker where nothing did.
+   Colour by freshness (minutes since the last snapshot): green under 5, yellow 5-10, red 10+. The <time> shows the
+   browser's local time once app.js runs (localTimeInit); UTC is the no-JS fallback.
+   Staging (RACINGLINES_ENV=staging) has no recorder, so it says so instead of showing an old "synced" time. #}
+{% macro sync_cls(m) %}{{ "good" if m < 5 else ("warn" if m < 10 else "bad") }}{% endmacro %}
+{% if recorders and env_label() == "staging" %}<p class="legend recorders">Order books: staging runs no recorder (two would split the book history), so this copy of production's books stops at
+{%- set newest = recorders|selectattr("last")|map(attribute="last")|list %}{% if newest %} <time class="localtime" datetime="{{ (newest|max).isoformat() }}">{{ (newest|max).strftime("%Y-%m-%d %H:%M") }} UTC</time>{% else %} its copy date{% endif %}. Live books are on <a href="https://racinglines.bet">racinglines.bet</a>.</p>
+{% elif recorders %}<p class="legend recorders">Order books recorded:{% for r in recorders %} {{ r.name }}
+{%- if r.state in ("live", "stale") %} <span class="{{ sync_cls(r.minutes) }}">{% if r.state == "live" %}{{ r.recent }} of {{ r.linked }} open markets, {% endif %}synced <time class="localtime" datetime="{{ r.last.isoformat() }}">{{ r.last.strftime("%Y-%m-%d %H:%M") }} UTC</time></span>
+{%- elif r.state == "unknown" %} <span class="muted">status unavailable</span>
+{%- else %} <span class="muted">no data yet</span>{% endif %}{% if not loop.last %} ·{% endif %}{% endfor %}</p>{% endif %}

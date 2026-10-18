@@ -1,0 +1,84 @@
+# Parts 2 and 3 of the public /term page (racinglines/web/term/demos.toml `parts`): the 2026 Singapore Grand Prix on the
+# real data, the real FastF1 timing and the real Kalshi and Polymarket tapes the VM recorded (owner, 2026-10-11 21:47Z:
+# "real race data and tapes. this is staging only"). Unlike part 1 these steps can't run on the demo store: they are
+# recorded on the VM against staging's database by scripts/vm/record_term_f1.sh, which takes a backup first (a replay
+# may save the stage pricings it is missing). Each step runs in one fresh folder, so the book files the first steps
+# write are there for the later ones.
+#
+# Times are UTC. The stage cutoffs are the ones the app's stage runs use for this weekend: pre-weekend 07:30 on the
+# 9th, after FP1 10:00, after Sprint Qualifying 13:45, after the Sprint 10:15 on the 10th, after Qualifying 15:00.
+# The picks are made after FP1 (profile A's first entries that weekend came in that stage; before it, it took none).
+# Each exchange is a `group`; its replay step is `optional`: an exchange where the replay takes no trades is left out
+# of the recording with its later steps (scripts/demo/record_term.py).
+
+[[steps]]
+section = "F1 Singapore: pre-race picks"
+title = "Profile A's picks on Kalshi, into a book"
+run = "racinglines strategy signals f1 --profile A --event 2026-17 --venue kalshi --asof 2026-10-09T10:05Z --no-fetch --book singapore-kalshi.toml"
+about = "Friday, after first practice: the core taker profile replays the weekend up to that moment against Kalshi's recorded order book, and every entry it would have taken is written to a book file, in Kalshi's cents, at the price it was taken at."
+group = "kalshi"
+optional = true
+
+[[steps]]
+section = "F1 Singapore: pre-race picks"
+title = "Profile A's picks on Polymarket, into a book"
+run = "racinglines strategy signals f1 --profile A --event 2026-17 --venue polymarket --asof 2026-10-09T10:05Z --no-fetch --book singapore-polymarket.toml"
+about = "Friday, after first practice: the core taker profile replays the weekend up to that moment against Polymarket's recorded order book, and every entry it would have taken is written to a book file, in dollars, at the price it was taken at. (Its Kalshi replay took no trades at that point, so Kalshi is left out.)"
+group = "polymarket"
+optional = true
+
+[[steps]]
+section = "F1 Singapore: pre-race picks"
+title = "Price the Kalshi book"
+run = "racinglines book price singapore-kalshi.toml --asof 2026-10-09T10:05Z"
+about = "Each pick against the model's fair price and the exchange's last tape price at that moment: the edge it was taken on."
+group = "kalshi"
+
+[[steps]]
+section = "F1 Singapore: pre-race picks"
+title = "Price the Polymarket book"
+run = "racinglines book price singapore-polymarket.toml --asof 2026-10-09T10:05Z"
+about = "Each pick against the model's fair price and the exchange's last tape price at that moment: the edge it was taken on."
+group = "polymarket"
+
+[[steps]]
+section = "F1 Singapore: through the sessions"
+title = "After Sprint Qualifying: Kalshi"
+run = "racinglines book price singapore-kalshi.toml --asof 2026-10-09T13:50Z"
+about = "After Sprint Qualifying sets the Sprint grid."
+group = "kalshi"
+
+[[steps]]
+section = "F1 Singapore: through the sessions"
+title = "After Sprint Qualifying: Polymarket"
+run = "racinglines book price singapore-polymarket.toml --asof 2026-10-09T13:50Z"
+about = "The Polymarket picks after Sprint Qualifying."
+group = "polymarket"
+
+[[steps]]
+section = "F1 Singapore: through the sessions"
+title = "After the Sprint: Kalshi"
+run = "racinglines book price singapore-kalshi.toml --asof 2026-10-10T10:20Z"
+about = "Saturday, after the Sprint."
+group = "kalshi"
+
+[[steps]]
+section = "F1 Singapore: through the sessions"
+title = "After the Sprint: Polymarket"
+run = "racinglines book price singapore-polymarket.toml --asof 2026-10-10T10:20Z"
+about = "The Polymarket picks after the Sprint."
+group = "polymarket"
+
+[[steps]]
+section = "F1 Singapore: through the sessions"
+title = "After Qualifying: Kalshi"
+run = "racinglines book price singapore-kalshi.toml --asof 2026-10-10T15:05Z"
+about = "The last look before Sunday: the grid is set, and each pick is marked against the model and the market one more time."
+group = "kalshi"
+
+[[steps]]
+section = "F1 Singapore: through the sessions"
+title = "After Qualifying: Polymarket"
+run = "racinglines book price singapore-polymarket.toml --asof 2026-10-10T15:05Z"
+about = "The Polymarket picks after Qualifying."
+group = "polymarket"

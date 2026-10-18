@@ -1,0 +1,72 @@
+# The kart demo pack: a data pack, nothing else. `--demo` (or `--demo kart`) on any command points it at a demo store
+# built from this folder (racinglines/demo/store.py); the commands themselves run unchanged. A pack names an EXISTING
+# sport schema, the files or generator that make its data, the real commands that load it, and its quickstart. Adding a
+# pack is adding a folder like this one (bundled under racinglines/demo/packs/, or in a folder on RACINGLINES_DEMO_PACKS):
+# no new command, flag, schema or code path.
+
+name = "kart"
+title = "Mario Kart Grand Prix"
+tagline = "Let's-a go! 🍄"          # printed once the store is ready (flavour is pack data, not code)
+sport = "f1"                    # stored under the F1 schema (sports/f1.toml): the drivers, teams and tracks are made up
+sport_name = "kart"             # what the quickstart's commands call it: `model backtest kart --demo` (read as f1)
+about = """A synthetic Formula 1 world with a Mario Kart grid: three seasons (2024-2026, twelve rounds each; 2026's
+rounds 1-9 raced), 20 drivers in 10 teams, FastF1-shaped practice, qualifying, sprint and race files, and quotes from
+a synthetic Polymarket and Kalshi on the live rehearsal's and the book's races. Every pace, result and price is
+invented; play money, nothing is traded anywhere."""
+
+# Files copied as they are into the demo data folder (data/demo/kart/): here the live rehearsal's launch spec
+files = "files"
+
+# The data generator: writes the FastF1 files and the exchange links into the demo data folder (DATA, not code
+# paths: racinglines/demo/mk_demo/generate.py)
+[generator]
+entry = "racinglines.demo.mk_demo.generate:write_pack"
+input = "world.toml"
+
+[load]
+# The real commands that load the data into the demo database, in order (each runs on the demo store). The forecast
+# files the unraced rounds as scheduled races, which the exchange links then attach to.
+commands = [
+    "racinglines data ingest f1 --years 2024-2026",
+    "racinglines model forecast f1 --save --sims 2000",
+    "racinglines data pm-links-import f1",
+    "racinglines data pm-links-import f1 --exchange kalshi",
+]
+
+[book]
+file = "book.toml"              # `racinglines book price --demo` prices it when no FILE is given
+
+[remote]
+# The pack's hosted store (`--demo --remote`, or --demo with source = "remote"): `racinglines mcp --http --demo` on the
+# VM, over its own database built from this pack (scripts/vm/demo_store.sh), never production's.
+mcp_url = "https://mcp-demo.racinglines.bet/mcp"
+
+# The quickstart: docs/quickstart.md's command blocks are rendered from these (scripts/build_quickstart.py), and the
+# web app's /term replay lists the same commands. In order; each runs as written, except a step with
+# `record = false`, which tools show but never run (the /term recorder types it without output; the tests skip it).
+[[quickstart]]
+title = "📦 Install racinglines"
+run = "pip install -r requirements.txt && pip install -e ."
+about = "From a clone of the repository, in a virtualenv with Python 3.11+: the dependencies and the `racinglines` command."
+record = false
+
+[[quickstart]]
+title = "🍄 Build and look at the demo store"
+run = "racinglines db stats --demo"
+about = "The first --demo command builds the store (a few minutes, with a progress bar): the database, the synthetic files, the real ingest and the exchange links. Later commands reuse it."
+
+[[quickstart]]
+title = "📊 Backtest the model"
+run = "racinglines model backtest kart --demo"
+about = "Every past race priced as of before the weekend, before qualifying and before the race, with track features on and off, scored against the results and against uniform and grid baselines."
+
+[[quickstart]]
+title = "🔮 Forecast the rest of the season"
+run = "racinglines model forecast kart --demo --save"
+about = "The next races (Rainbow Road is a sprint weekend) and both championships; --save stores the run the book and the web app read."
+
+[[quickstart]]
+title = "🏁 Run a live private book"
+run = "racinglines live run kart/demo-2026-09 --demo --simulate --no-fetch"
+about = "Bowser's Castle (round 9) replayed on a simulated clock: the maker's book opens before practice, reprices after each session from the model's stage runs, 100 simulated takers trade against it, the book closes at lights out and settles from the results."
+

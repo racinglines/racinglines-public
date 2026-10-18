@@ -1,0 +1,91 @@
+name: release
+
+# PyPI releases, one per tag, from this private repo (owner, 18 Oct: trusted publishing from racinglines/racinglines
+# until the public repo exists). The wheel is never built from this tree: the job runs the F1-only export
+# (scripts/oss/export.py + oss/manifest.toml, plain MIT LICENSE from oss/overlay/, no other sports) and builds, smoke-tests and uploads that tree. The owner
+# copies this file to .github/workflows/release.yml (cloud sessions can't push workflows). Runbook: docs/release.md.
+#
+#   v0.1.0rc1, v0.1.0a1, v0.1.0b1   export, build + smoke, then TestPyPI only (a dry run)
+#   v0.1.0                          export, build + smoke, TestPyPI, then PyPI once a reviewer approves `pypi`
+#
+# No API tokens: both indexes trust this workflow by OIDC. The tag sets the version (export.py --version writes it into the exported pyproject).
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: export + build + smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0                  # the export reads the tag's tracked files with git
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"          # the floor in pyproject's requires-python
+
+      - name: Version from the tag
+        id: version
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          case "$ver" in *a*|*b*|*rc*) echo "prerelease=true" >> "$GITHUB_OUTPUT";; *) echo "prerelease=false" >> "$GITHUB_OUTPUT";; esac
+
+      - name: F1-only export of the tag
+        run: python scripts/oss/export.py --ref "$GITHUB_REF_NAME" --out "$RUNNER_TEMP/public" --version "${{ steps.version.outputs.version }}"
+
+      - name: Build, check and smoke-test the wheel (plain MIT required, version from the tag)
+        env:
+          RELEASE: "1"
+          EXPECT_VERSION: ${{ steps.version.outputs.version }}
+        run: bash "$RUNNER_TEMP/public/scripts/release/package_smoke.sh" "$GITHUB_WORKSPACE/dist"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  testpypi:
+    name: publish to TestPyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/racinglines
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  pypi:
+    name: publish to PyPI
+    needs: [build, testpypi]
+    if: needs.build.outputs.prerelease == 'false'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi                          # required reviewer: the owner (the go for an upload that can't be undone)
+      url: https://pypi.org/p/racinglines
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

@@ -1,0 +1,25 @@
+{% extends "base.html" %}{% from "_macros.html" import page_head, empty, source_note %}
+{% block title %}Recorded tapes{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/markets">Markets</a> › Recorded tapes</p>
+{% call page_head("Recorded tapes", "The sports we record but don't price (" ~ sports|join(", ") ~ "): every exchange market linked for them and what has been recorded on it. Market data only: no model, no positions, no P&L.") %}{% endcall %}
+<p class="legend">Recorded = rows stored for the event's markets: trades (the tape), price points (minute / hourly history) and order-book snapshots, with when each was last recorded.{% if user.role == 'admin' %} Sync and record from the command line: <code>racinglines markets --exchange kalshi --sport nascar sync|trades|history|books</code> (docs/todo.md, U9).{% endif %}</p>
+{% if not blocks %}{{ empty("No tape-only markets linked yet." ~ (" Sync a sport first (racinglines markets --exchange kalshi --sport nascar sync)." if user.role == 'admin' else "")) }}{% endif %}
+{% for b in blocks %}
+<details class="card" id="tapes-{{ b.sport }}-{{ b.exchange }}" data-remember="tapes:{{ b.sport }}:{{ b.exchange }}"{% if loop.first %} open{% endif %}>
+  <summary><h2>{{ b.sport_name }} · {{ b.exchange_name }}</h2><span class="sum">{{ b.markets }} markets · {{ b.open }} open · {{ "{:,}".format(b.trades) }} trades · {{ "{:,}".format(b.prices) }} price points · {{ "{:,}".format(b.books) }} books · synced {{ b.synced|fmt }}</span></summary>
+  <div class="scroll" data-rows="15" data-filter="Filter by event"><table>
+  <thead><tr><th class="l">Event</th><th>Markets</th><th class="hide-sm">Open</th><th>Volume</th><th class="l hide-sm">Favourite</th><th>Last</th><th class="hide-sm">Trades</th><th class="hide-sm">Last trade</th><th class="hide-sm">Price points</th><th class="hide-sm">Last price</th><th class="hide-sm">Books</th><th class="hide-sm">Last book</th><th>Ends</th></tr></thead><tbody>
+  {% for e in b.events %}<tr>
+    <td class="l">{{ e.title }} <span class="muted"><code>{{ e.slug }}</code></span></td>
+    <td>{{ e.markets }}</td><td class="hide-sm {{ 'muted' if not e.open }}">{{ e.open }}</td><td>{{ "{:,.0f}".format(e.volume) }}</td>
+    <td class="l hide-sm">{{ e.favourite or "" }}</td><td>{{ "%.2f"|format(e.last_price) if e.last_price is not none else "–" }}</td>
+    <td class="hide-sm {{ 'good' if e.trades else 'muted' }}">{{ "{:,}".format(e.trades) }}</td><td class="hide-sm">{{ e.trades_last|fmt if e.trades_last else "–" }}</td>
+    <td class="hide-sm {{ 'good' if e.prices else 'muted' }}">{{ "{:,}".format(e.prices) }}</td><td class="hide-sm">{{ e.prices_last|fmt if e.prices_last else "–" }}</td>
+    <td class="hide-sm {{ 'good' if e.books else 'muted' }}">{{ "{:,}".format(e.books) }}</td><td class="hide-sm">{{ e.books_last|fmt if e.books_last else "–" }}</td>
+    <td>{{ e.end_date|fmt }}</td></tr>{% endfor %}
+  </tbody></table></div>
+  {{ source_note(b.competition, [b.exchange]) }}
+</details>
+{% endfor %}
+{% endblock %}

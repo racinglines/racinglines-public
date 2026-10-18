@@ -1,0 +1,95 @@
+{% from "_macros.html" import empty, chart, demo_context, kpi, pnl, pc, px, source_note %}
+{% macro t(ms) %}{% if ms %}{{ "%d:%06.3f"|format(ms // 60000, (ms % 60000) / 1000) }}{% endif %}{% endmacro %}
+{% if not snap %}
+<h1>Live</h1><p class="muted">No live event right now. The next downhill final will show here while it runs.</p>
+{% else %}
+{# --- status strip --- #}
+<div class="live-head"><h1>{{ "Whistler DH · Men's final" if snap.slug == "20260925_mtb" else snap.round }}</h1>
+  {% if mode == 'live' %}<span class="pill live">live</span>{% else %}<span class="pill no">{{ "replay · final over" if snap.done else "replay" }}</span>{% endif %}</div>
+<div class="live-meta">
+  <span>{% if mode == 'replay' %}UCI live timing as it stood at <b>{{ snap.ts[11:19] }} UTC</b> on {{ snap.ts[:10] }}{% else %}UCI live timing, updated <b>{{ age }} s</b> ago ({{ snap.ts[11:19] }} UTC){% endif %}</span>
+  <span><b>{{ snap.counts.get('Finished', 0) }}</b> finished</span><span><b>{{ snap.counts.get('InRace', 0) }}</b> on course</span><span><b>{{ snap.counts.get('NA', 0) }}</b> to start</span>
+  {% if snap.conditions %}<span>conditions <b>{{ snap.conditions }}</b></span>{% endif %}
+  {% if mode == 'live' %}<span class="faint">refreshes itself</span>{% endif %}
+</div>
+{{ source_note(sport, none, none, snap.ts, model=true) }}
+{% if snap.waiting %}<div class="card accent" id="dh-waiting"><p><b>Before the final.</b> {{ snap.waiting }}.</p>
+{% for q in snap.qualifying or [] %}<h3>{{ q.title }}{% if q.running %} <span class="pill live">running</span>{% endif %}</h3>
+<div class="scroll" data-rows="12"><table><thead><tr><th>#</th><th class="l">Rider</th><th>Time</th><th>Gap</th><th class="l">Status</th></tr></thead><tbody>
+{% for r in q.rows %}<tr><td>{{ r.rank or "" }}</td><td class="l">{{ r.name }} <span class="muted">{{ r.nation or "" }}</span></td><td class="num">{{ t(r.time) }}</td><td class="num muted">{{ "+%.3f"|format(r.gap / 1000) if r.gap else "" }}</td><td class="l muted">{{ "" if r.rank else r.status or "" }}</td></tr>{% endfor %}
+</tbody></table></div>{% else %}<p class="muted">No qualifying times yet.</p>{% endfor %}</div>
+{% elif snap.betting and snap.betting.late %}<p class="card accent"><b>Late window</b> since {{ (snap.betting.late_at or "")[11:19] }} UTC: updates every {{ snap.betting.interval }} s, the crowd bets at 50× the normal pace, and every private taker has a fresh {{ snap.betting.late_cap|money(false, false) }} cap. Quotes stay live while each market remains safe to price.</p>
+{% elif snap.betting %}<p class="legend">Quotes refresh every {{ snap.betting.interval }} s until each individual market becomes unquoteable; the late window opens with {{ snap.betting.to_start }} riders still to start.</p>{% endif %}
+{% call demo_context("A live experiment.") %}{% if maker %}The demo maker re-quotes every rider's win and podium market on every timing update: fair odds from a live simulation of the rest of the final, plus a spread that widens while a rider is on course. The demo taker bought a dozen of these quotes before the fast riders started, picked on hype.{% else %}The demo taker bought a dozen YES bets on the maker's quotes before the fast riders started, picked on hype (big names, home riders, fan favourites) rather than on value. Prices update live until the final settles.{% endif %} Paper only.{% endcall %}
+
+{# --- the headline numbers --- #}
+<div class="kpis hero">
+  {% if snap.done %}{{ kpi("Winner", fin[0].name if fin else "–", t(fin[0].time) if fin else "", "", "", small=True) }}{% endif %}
+  {% if maker and mpnl %}{{ kpi("The maker's event P&L · " ~ ("settled" if snap.done else "marked to fair"), mpnl.total, "vs the crowd " ~ mpnl.crowd|money(true) ~ " · vs the demo taker " ~ mpnl.taker|money(true), "money") }}{% endif %}
+  {% if maker and crowd %}{{ kpi("Crowd fills", crowd.fills, (crowd.last_fills if crowd.last_fills is defined else 0) ~ " since the last update · " ~ crowd.active ~ " of " ~ crowd.takers ~ " takers have bet") }}
+  {{ kpi("Crowd volume", (crowd.volume|money(false, false)), (("of " ~ (crowd.budget_total|money(false, false)) ~ " in event budgets ($10–200 each)" if crowd.budget_total is defined and crowd.budget_total is not none else "") if crowd.budget_total is defined and crowd.budget_total is not none else "")) }}{% endif %}
+  {% if picks %}{% if maker %}{{ kpi("The demo taker's picks · the maker's P&L on them", tot.maker_pnl, picks|length ~ " bets, " ~ (tot.stake|money(false, false)) ~ " staked" ~ (" · " ~ tot.won ~ " won, " ~ tot.lost ~ " lost" if tot.won or tot.lost else ""), "money") }}
+  {% else %}{{ kpi("Your picks · P&L", tot.pnl, picks|length ~ " bets, " ~ (tot.stake|money(false, false)) ~ " staked · worth " ~ (tot.value|money) ~ " now" ~ (" · " ~ tot.won ~ " won, " ~ tot.lost ~ " lost" if tot.won or tot.lost else ""), "money") }}{% endif %}{% endif %}
+</div>
+
+{# --- one view at a time: the race, the odds, the chart, the book --- #}
+<nav class="ptabs" data-tabs="live" role="tablist">
+  <button type="button" role="tab" data-tab="race">{{ "Race" if maker else "Race and my picks" }}</button>
+  {% if maker %}<button type="button" role="tab" data-tab="odds">Odds and quotes<span class="n">{{ grid|length }} riders</span></button>{% endif %}
+  {% if maker and win_chart %}<button type="button" role="tab" data-tab="chart">Win chart</button>{% endif %}
+  {% if maker and book %}<button type="button" role="tab" data-tab="book">Private book<span class="n">{{ crowd.takers }} takers</span></button>{% endif %}
+</nav>
+
+{# --- the race: leaderboard, on course, up next --- #}
+<section data-panel="race">
+{% if not maker %}{% include "live_picks.html" %}{% endif %}
+<div class="board">
+<div class="card"><h2>Leaderboard</h2>
+{% if fin %}<div class="scroll"><table><thead><tr><th>#</th><th class="l">Rider</th><th>Time</th><th>Gap</th></tr></thead><tbody>
+{% for r in fin[:10] %}<tr><td>{{ r.rank }}</td><td class="l">{{ r.name }} <span class="muted">{{ r.nation or "" }}</span></td><td class="num">{{ t(r.time) }}</td><td class="num muted">{{ "+%.3f"|format(r.gap / 1000) if r.gap else "" }}</td></tr>{% endfor %}
+</tbody></table></div>{% else %}{{ empty("Nobody has finished yet.") }}{% endif %}</div>
+<div class="card"><h2>On course</h2>
+<ul class="oncourse">{% for r in on %}<li><b>{{ r.name }}</b> <span class="muted">{{ r.nation or "" }}</span><br>
+  {% if r.splits %}split {{ r.splits|length }}: {{ t(r.splits[-1]) }}{% if r.split_pos and r.split_pos[-1] %} · <b>{{ r.split_pos[-1] }}{{ {1: "st", 2: "nd", 3: "rd"}.get(r.split_pos[-1], "th") }}</b> at this split{% endif %}{% else %}started{% endif %}
+  {% if maker %}<br><span class="muted">win {{ pc(r.p1) }} · podium {{ pc(r.top3) }}</span>{% endif %}</li>
+{% else %}<li class="muted">{{ "The final hasn't started." if snap.waiting else "Nobody on course right now." }}</li>{% endfor %}</ul>
+<h3>Up next</h3>
+<p>{% if snap.waiting %}<span class="muted">the final's start list isn't out yet</span>{% else %}{% for r in nxt %}{{ r.name }}{{ " · " if not loop.last }}{% else %}<span class="muted">everyone has started</span>{% endfor %}{% endif %}</p></div>
+</div>
+</section>
+
+{# --- the maker's view: rank probabilities, quotes, the chart, the book --- #}
+{% if maker %}
+<section data-panel="odds" hidden>
+<div class="card"><div class="section-head"><h2>Rank probabilities and quotes</h2><span class="legend">from 20,000 simulated finishes after every update · quotes are the maker's YES bid / ask · ▲▼ the move since the last update</span></div>
+{% if snap.model_version and snap.model_version >= 2 %}<p class="legend"><b>Pricing model v{{ snap.model_version }}</b> (switched mid-final; earlier bets keep their prices): the track is wearing, so riders still to come are priced on a start-order trend{% if snap.trend %} (next rider's final at {{ "%.1f"|format((snap.trend.next_ratio - 1) * 100) }}% vs qualifying, ± {{ "%.1f"|format(snap.trend.sd * 100) }}% shared){% endif %}; quotes pulled after a rider's last split.</p>{% endif %}
+<div class="scroll" data-rows="15" data-filter="Filter by rider"><table><thead><tr><th class="l">Rider</th><th class="l"></th><th>1st</th><th>2nd</th><th>3rd</th><th>Top 3</th><th>Top 5</th><th>Top 10</th><th>Win bid / ask</th><th>Podium bid / ask</th></tr></thead><tbody>
+{% for r in grid %}<tr><td class="l">{{ r.name }}</td>
+  <td class="l">{% if r.status == 'Finished' %}<span class="muted">finished</span>{% elif r.status == 'InRace' %}<span class="pill yes">on course</span>{% elif r.next is not none %}<span class="muted">starts {{ r.next + 1 }}{{ {0: "st", 1: "nd", 2: "rd"}.get(r.next, "th") }}</span>{% endif %}</td>
+  <td>{{ pc(r.p1) }}</td><td>{{ pc(r.p2) }}</td><td>{{ pc(r.p3) }}</td><td><b>{{ pc(r.top3) }}</b></td><td>{{ pc(r.top5) }}</td><td>{{ pc(r.top10) }}</td>
+  <td class="num">{{ px(r.win_bid) }} / {{ px(r.win_ask) }} <span class="{{ 'good' if r.win_move == 'up' else 'bad' }}">{{ "▲" if r.win_move == 'up' else "▼" if r.win_move == 'down' else "" }}</span></td>
+  <td class="num">{{ px(r.podium_bid) }} / {{ px(r.podium_ask) }} <span class="{{ 'good' if r.podium_move == 'up' else 'bad' }}">{{ "▲" if r.podium_move == 'up' else "▼" if r.podium_move == 'down' else "" }}</span></td></tr>{% endfor %}
+</tbody></table></div></div>
+</section>
+{% if win_chart %}<section data-panel="chart" hidden><div class="card"><h2>Win probability through the final</h2>{{ chart(win_chart) }}</div></section>{% endif %}
+
+{% if book %}<section data-panel="book" hidden>
+<div class="card"><div class="section-head"><h2>Private book</h2><span class="muted">{{ crowd.takers }} anonymous takers · {{ "settled" if snap.done else "marked to fair" }}</span></div>
+<div class="board">
+<div><h3 class="mt0">Biggest positions</h3><div class="scroll"><table><thead><tr><th class="l">Market</th><th>Shares (YES)</th><th>Result</th><th>P&amp;L</th></tr></thead><tbody>
+{% for p in positions %}<tr><td class="l">{{ p.rider }} <span class="muted">{{ "wins" if p.market == 'win' else "podium" }}</span></td><td class="num {{ 'bad' if p.inv < 0 else '' }}">{{ "%+.0f"|format(p.inv) }}</td>
+  <td>{% if p.settled %}{{ "YES" if p.value else "NO" }}{% else %}{{ pc(p.value) }}{% endif %}</td><td>{{ pnl(p.pnl) }}</td></tr>{% endfor %}
+</tbody></table></div></div>
+<div><h3 class="mt0">Recent fills</h3><div class="scroll"><table><thead><tr><th class="l">UTC</th><th class="l">Crowd</th><th class="l">Market</th><th>Price</th><th>Shares</th></tr></thead><tbody>
+{% for f in recent %}<tr><td class="l muted">{{ f.ts }}</td><td class="l">{{ "bought YES" if f.side == 'buy' else "sold YES" }}</td><td class="l">{{ f.rider }} <span class="muted">{{ "wins" if f.market == 'win' else "podium" }}</span></td><td>{{ px(f.price) }}</td><td>{{ "%.0f"|format(f.shares) }}</td></tr>
+{% else %}<tr><td colspan="5">{{ empty("No fills yet.") }}</td></tr>{% endfor %}
+</tbody></table></div></div></div>
+{% set cr = crowd.results %}{% if cr %}<h3>The crowd's results <span class="muted">(each anonymous taker, by id; no accounts)</span></h3>
+<p>{{ cr.bettors }} have bet: <b class="good">{{ cr.up }} up</b>, <b class="bad">{{ cr.down }} down</b> · median {{ cr.median|money(true) }} · best {{ cr.best|money(true) }} · worst {{ cr.worst|money(true) }} · together {{ cr.total|money(true) }}{{ " (settled)" if snap.done else " (marked to fair)" }}</p>
+<p class="legend">A random taker, <code>{{ cr.spotlight.taker[:8] }}</code>: {{ cr.spotlight.pnl|money(true) }} on
+{% for b in cr.spotlight.bets %}{{ "long" if b.yes > 0 else "short" }} {{ "%.0f"|format(b.yes|abs) }} YES on {{ by_bib.get(b.market.split(':')[0]|int, b.market) }} {{ "winning" if b.market.endswith('win') else "podium" }} ({{ b.pnl|money(true) }}){{ "; " if not loop.last }}{% endfor %}</p>{% endif %}
+</div>
+{% include "live_picks.html" %}
+</section>{% endif %}
+{% endif %}
+{% endif %}

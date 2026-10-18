@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}{{ code }}{% endblock %}
+{% block content %}
+<h1>{{ code }}</h1>
+<p>{{ message }}</p>
+<p><a href="{{ home }}">{{ "Back to the markets →" if home == "/markets" else "Back to sign in →" }}</a></p>
+{% endblock %}

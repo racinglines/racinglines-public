@@ -1,0 +1,14 @@
+{# Every sport's status (web/sport_status.py, RACINGLINES_SPORT_STATUS=1): race data, market data, model, backtests and
+   (pro and admin) the demo paper record, one row per sport; a missing piece says so. #}
+{% macro cell(x) %}{% set cls = {"ok": "good", "partial": "warn", "none": "bad", "na": "muted"}[x.state] %}<td class="l"><span class="{{ cls }}">{{ x.text }}</span>{% if x.note %} <span class="pill no">{{ x.note }}</span>{% endif %}{% if x.sub %}<div class="legend">{{ x.sub }}</div>{% endif %}</td>{% endmacro %}
+<details class="card" data-remember="markets:sport-status">
+<summary><h2 class="h-inline">Every sport: status</h2> <span class="sum">{{ sport_status|selectattr('modeled')|list|length }} modeled · {{ sport_status|rejectattr('modeled')|list|length }} tape only · counted from the database just now</span></summary>
+<p class="legend">What we hold for each sport and what is missing. <span class="good">Green</span>: in place · <span class="warn">amber</span>: partial · <span class="bad">red</span>: missing · <span class="muted">grey</span>: not applicable (a tape-only sport has no model by design). Replay grids and paper records outside F1 are in-sample demos on the exchanges' recorded prices: indicative only{% if show_paper %}; buy-all debug runs are never counted{% endif %}.</p>
+<div class="scroll"><table>
+<thead><tr><th class="l">Sport</th><th class="l">Race data</th><th class="l">Exchange markets</th><th class="l">Model</th><th class="l">Backtests</th>{% if show_paper %}<th class="l">Paper record (demo accounts)</th>{% endif %}</tr></thead>
+<tbody>{% for s in sport_status %}<tr>
+<td class="l"><b>{{ s.name }}</b>{% if not s.modeled %} <span class="pill no">tape only</span>{% endif %}</td>
+{{ cell(s.races) }}{{ cell(s.markets) }}{{ cell(s.model) }}{{ cell(s.backtests) }}{% if show_paper %}{{ cell(s.paper) }}{% endif %}
+</tr>{% endfor %}</tbody>
+</table></div>
+</details>

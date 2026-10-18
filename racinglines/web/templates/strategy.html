@@ -1,0 +1,137 @@
+{% extends "base.html" %}{% from "_macros.html" import empty, pnl_cls, chart, demo_context, kpi, pnl, page_head, flash %}
+{% block title %}Strategy{% endblock %}
+{% block content %}{% set simple = alpha_layout is defined and alpha_layout() %}{# the alpha's plain view: no venue tabs, sport select or How it chooses (web/layout.py) #}
+{% include "_lab_nav.html" %}
+{% call page_head("Strategy" ~ (" · " ~ viewer.username if viewer.id != user.id else ""), "The strategy this account runs: its calls on each race weekend, stage by stage, how it has done, and how it got here. Paper only: nothing is sent to an exchange.") %}
+{% if can_pick %}<a href="/strategy/pick">{{ "Change strategy" if profile else "Pick a strategy" }}</a> · {% endif %}<a href="/positions{{ '?venue=' ~ venue if venue }}">What it holds: Positions →</a>
+{%- if venue_tabs and not simple %}<nav class="tabs" aria-label="Which exchange's record"><a href="?{{ 'user=' ~ viewer.username if viewer.id != user.id }}"{% if not venue %} aria-current="page"{% endif %}>Polymarket</a>{% for k in venue_tabs %}<a href="?venue={{ k }}{{ '&user=' ~ viewer.username if viewer.id != user.id }}"{% if venue == k %} aria-current="page"{% endif %}>{{ venue_names.get(k, k) }}</a>{% endfor %}</nav>{% endif %}
+{% if users %}<form method="get" class="inline"><label><span>User</span><select name="user" data-autosubmit>
+  {% for u in users %}<option {{ 'selected' if u == viewer.username }}>{{ u }}</option>{% endfor %}</select></label></form>{% endif %}
+{% if sport_options and not simple %}<form method="get" class="inline">
+  {% if viewer.id != user.id %}<input type="hidden" name="user" value="{{ viewer.username }}">{% endif %}
+  {% if venue %}<input type="hidden" name="venue" value="{{ venue }}">{% endif %}
+  <label><span>Sport</span><select name="sport" data-autosubmit>
+    <option value="">all sports</option>
+    {% for code in sport_options %}<option value="{{ code }}" {{ 'selected' if sport == code }}>{{ sport_names.get(code, code) }}</option>{% endfor %}
+  </select></label>
+</form>{% endif %}{% endcall %}
+
+{{ flash(msg) }}
+{% if not profile and not record %}{% if can_pick %}<div class="card empty-pick"><h2>No strategy yet</h2>
+<p>This account doesn't paper-trade anything until you pick a strategy. Start with the shortlist's first, or choose and tune your own.</p>
+<p><a class="button primary" href="/strategy/pick">Pick a strategy</a></p></div>
+{% else %}<p class="muted">No strategy profile is assigned to this account. An admin can assign one on the user's admin page.</p>{% endif %}{% else %}
+{% set k = acct.kpis %}
+<div class="kpis hero">
+  <div class="kpi"><div class="l">Running now</div><div class="v sm">{{ profile.name if profile else "–" }}</div><div class="s">{{ profile.strategy if profile }}{% if show_fair and profile %} · <code>{{ profile.settings.variant }}</code>{% endif %}{% if profile and profile.follow_rate %} · takes about {{ "%.0f"|format(profile.follow_rate * 100) }}% of signals{% endif %}</div></div>
+  <div class="kpi"><div class="l">Fantasy P&amp;L</div><div class="v {{ pnl_cls(k.total) }}">{{ k.total|money(true) }}</div><div class="s">cumulative, since the first weekend</div></div>
+  <div class="kpi"><div class="l">Worst drawdown</div><div class="v bad">{{ k.max_dd|money(true) }}</div><div class="s">from a peak of cumulative P&amp;L</div></div>
+  <div class="kpi"><div class="l">Most capital in use</div><div class="v">{{ k.peak_deployed|money(false, false) }}</div><div class="s">in any one weekend</div></div>
+  <div class="kpi"><div class="l">Weekends up</div><div class="v">{{ k.up }}/{{ k.weekends }}</div><div class="s">{% for y in seasons %}{{ y.year }}: {{ y.pnl|money(true) }}{{ " · " if not loop.last }}{% endfor %}</div></div>
+</div>
+{% if show_fair and profile_why %}<p class="legend">{{ profile_why }}</p>{% endif %}
+{% if record|selectattr('demo')|list %}{% call demo_context() %}<span class="pill no">demo replay, in-sample</span> {{ 'NASCAR and MotoGP races are' if sport_shown('motogp', user) else 'NASCAR races are' }} the taker replay on the exchange's recorded prices (after its taker fee), each market kind traded with the setting that did best on these same seasons: a demo of the strategy, not evidence of an edge.{% endcall %}{% endif %}
+{% if show_fair and mix and (mix|length > 1 or mix[0].family == 'taker') %}<div class="card"><h2>Where the P&amp;L came from</h2>
+<p class="legend">This account's paper record by sport and kind of strategy. <span tabindex="0" data-tooltip="quotes both sides, earns spread">Maker</span>: quotes both sides and earns the spread. <span tabindex="0" data-tooltip="takes model's edge at market price">Taker</span>: takes the model's edge at the market's price.</p>
+<div class="scroll"><table><thead><tr><th class="l">Sport</th><th class="l">Strategy</th><th>Races / weekends</th><th>Up</th><th>Fantasy P&amp;L</th><th class="l"></th></tr></thead>
+<tbody>{% for m in mix %}<tr><td class="l">{{ sport_names.get(m.sport, m.sport) if m.sport else "–" }}</td><td class="l">{{ m.family }}</td><td>{{ m.weekends }}</td><td>{{ m.up }}</td>
+<td class="{{ pnl_cls(m.pnl) }}">{{ m.pnl|money(true) }}</td><td class="l">{% if m.demo %}<span class="pill no">demo replay, in-sample</span>{% endif %}</td></tr>{% endfor %}</tbody>
+</table></div></div>{% endif %}
+{% if record|selectattr('backfill')|list %}{% call demo_context() %}<span class="pill no">backtest replay</span> weekends were replayed from {% if venue %}{{ venue_names.get(venue, venue) }}'s real prices and trades (with its fees){% else %}Polymarket's real prices and trades{% endif %} with the strategy this demo account ran then; they weren't traded live. Live paper trading starts with the next race weekend.{% endcall %}{% endif %}
+
+{# --- one view at a time: the record, one weekend, how the account chooses --- #}
+<nav class="ptabs" data-tabs="strategy" role="tablist">
+  <button type="button" role="tab" data-tab="record">Track record<span class="n">{{ k.weekends }} weekends</span></button>
+  {% if cur %}<button type="button" role="tab" data-tab="weekend">{{ cur.event_name or cur.event_key }}<span class="n">{{ stages|length }} stages</span></button>{% endif %}
+  {% if (acct.decisions or acct.taker) and not simple %}<button type="button" role="tab" data-tab="how">How it chooses</button>{% endif %}
+</nav>
+
+<section data-panel="record">
+{% if acct.chart %}<div class="card">{{ chart(acct.chart) }}</div>{% endif %}
+<div class="card"><h2>Track record</h2><p class="legend">Click a weekend for its calls, stage by stage.</p><div class="scroll" data-rows="25" data-filter="Filter by weekend or strategy"><table>
+<thead><tr><th class="l">Weekend</th><th class="l">Strategy</th><th>{{ "Fills" if is_maker else "Trades taken" }}</th><th title="Markets still held when the race started">Held to the race</th><th>Most in use</th><th>P&amp;L</th><th>Running total</th><th class="l"></th></tr></thead><tbody>
+{% for y in seasons %}{% for r in y.rows %}<tr class="{{ 'sel' if r.event_key == event_key }}">
+  <td class="l"><a href="?event={{ r.event_key }}{% if viewer.id != user.id %}&user={{ viewer.username }}{% endif %}{% if venue %}&venue={{ venue }}{% endif %}{% if sport %}&sport={{ sport }}{% endif %}#weekend">{{ r.event_name or r.event_key }}</a> <span class="muted">{{ r.start_date|fmt if r.start_date }}</span></td>
+  <td class="l">{{ r.profile }}</td>
+  <td>{{ r.fills if r.strategy.startswith('maker') else r.taken }}</td><td>{{ r.positions }}</td><td>{{ r.deployed|money(false, false) }}</td>
+  <td class="{{ pnl_cls(r.pnl) }}">{{ r.pnl|money(true) }}{% if not r.settled %} <span class="muted">open</span>{% endif %}</td>
+  <td>{{ r.cum|money(true) }}</td>
+  <td class="l">{% if r.demo %}<span class="pill no">demo replay, in-sample</span>{% elif r.backfill %}<span class="pill no">backtest replay</span>{% else %}<span class="pill yes">live paper</span>{% endif %}</td></tr>{% endfor %}
+  <tr class="total"><td class="l"><b>{{ y.year }}</b></td><td class="l"></td><td></td><td></td><td></td><td class="{{ pnl_cls(y.pnl) }}"><b>{{ y.pnl|money(true) }}</b></td><td></td><td class="l muted">{{ y.up }}/{{ y.weekends }} weekends up</td></tr>
+{% endfor %}
+</tbody></table></div></div>
+</section>
+
+{% if cur %}<section data-panel="weekend" hidden>
+<h2 class="mt0">{{ cur.event_name or cur.event_key }} <span class="muted small">· {{ cur.profile }}{% if cur.backfill %} · backtest replay{% endif %}</span></h2>
+{% if positions %}{% set held = positions|selectattr('value', 'ne', none)|list %}
+<p>This weekend's positions: <b>{{ positions|length }}</b> markets, P&amp;L <b class="{{ pnl_cls(held|sum(attribute='value')) }}">{{ held|sum(attribute='value')|money(true) }}</b>
+  · <a href="/positions?event={{ event_key }}{% if venue %}&venue={{ venue }}{% endif %}">see them on Positions →</a></p>{% endif %}
+{% if not maker and stages %}<p class="legend">Heat: how much the model expects an entry to earn,
+  <span class="heat h1">warm</span> <span class="heat h2">hot</span> <span class="heat h3">very hot</span>
+  (the middle and top quarter of this profile's backtest entries). It grades the model's conviction, not a promise:
+  in the 2026 backtest hotter entries did earn more, in 2025 they didn't, and the model expects more than it has realised.{% if not show_fair %}
+  Rating: one to three stars, how far a pick clears the bar of the strategy that made it.{% endif %}</p>
+{% if stages|map(attribute='signals')|sum(start=[])|selectattr('followed', 'false')|list %}{% call demo_context() %}<b>Taken</b> / <b>passed</b>: this demo account follows some recommendations, not all (hotter ones more often), and sticks with a market once it's in.{% endcall %}{% endif %}{% endif %}
+
+{% for st in stages %}
+<details class="card" data-remember="strategy:stage:{{ loop.index }}"{% if loop.last %} open{% endif %}><summary><h2>{{ st.stage }}</h2><span class="sum">{{ st.signals|length }} signal{{ "s" if st.signals|length != 1 }}{% if not maker %} · {{ st.signals|selectattr('followed', 'true')|list|length }} taken{% endif %}</span></summary>
+<div class="scroll" data-rows="20" data-filter="Filter by market"><table>
+<thead><tr><th class="l">Market</th><th class="l">Action</th><th>Shares</th><th>Limit</th><th>Cost</th>{% if not maker %}<th class="l">Heat</th>{% endif %}{% if not maker and not show_fair %}<th class="l">Rating</th>{% endif %}
+  {% if show_fair %}<th>Market</th><th>Our fair</th><th>Edge</th>{% endif %}<th class="l">Status</th><th class="l">When (UTC)</th></tr></thead><tbody>
+{% for s in st.signals %}<tr class="{{ 'muted-row' if s.followed == false }}">
+  <td class="l">{{ s.subject }} <span class="muted">{{ s.kind|kind }}</span></td>
+  <td class="l">{% if s.action in ('buy', 'sell') %}<b>{{ s.action|upper }} {{ s.side }}</b>{% elif s.action == 'fill' %}paper fill · {{ 'bought' if s.side == 'YES' else 'sold' }} YES{% else %}{{ 'quoting' if s.action == 'quote' else 'stopped quoting' }}{% if s.detail and s.detail.reason %} <span class="muted">({{ s.detail.reason }})</span>{% endif %}{% endif %}</td>
+  <td>{{ "%.0f"|format(s.shares) if s.shares is not none else "" }}</td>
+  <td>{{ "%.2f"|format(s.limit_price) if s.limit_price is not none else "" }}</td>
+  <td>{{ ((s.shares * s.limit_price)|money) if s.shares is not none and s.limit_price is not none else "" }}</td>
+  {% if not maker %}<td class="l">{% if s.heat %}<span class="heat h{{ s.heat }}">{{ s.heat_label }}</span>{% elif s.action == 'sell' %}<span class="muted">exit / trim</span>{% endif %}</td>{% endif %}
+  {% if not maker and not show_fair %}<td class="l">{% if s.stars %}<span title="{{ s.stars }} of 3">{{ "★" * s.stars }}{{ "☆" * (3 - s.stars) }}</span>{% endif %}</td>{% endif %}
+  {% if show_fair %}<td>{{ "%.3f"|format(s.price) if s.price is not none else "" }}</td><td>{{ "%.3f"|format(s.fair) if s.fair is not none else "" }}</td>
+    <td>{{ "%+.1f pts"|format(s.edge * 100) if s.edge is not none else "" }}</td>{% endif %}
+  <td class="l">{% if s.followed == true %}<b>taken</b>{% elif s.followed == false %}<span class="muted">passed</span>{% elif s.action in ('quote', 'pull') and s.detail and s.detail.backfill %}{% else %}<span class="muted">{{ s.status|replace('_', ' ') }}</span>{% endif %}</td>
+  <td class="l">{{ s.signal_ts|fmt }}</td></tr>{% endfor %}
+</tbody></table></div></details>
+{% else %}{{ empty("No signals yet this weekend.") }}{% endfor %}
+</section>{% endif %}
+
+{% if acct.decisions and not simple %}<section data-panel="how" hidden>
+<div class="card"><h2>How this account has used racinglines</h2>
+{% call demo_context("This demo " ~ ("maker" if is_maker else "taker") ~ "'s rule.") %}It re-checks its setup in the Lab's <b>Edge Finder</b> at a few decision points, using only the weekends raced so far.
+Mid-season it follows the setup that has made the most, if the lead is over $100. Before a new season, a whole season's commitment, it takes every setup within
+the noise floor of the leader (about {{ "$350" if is_maker else "$400" }} a season, below which differences are simulation noise) and commits to the <b>most consistent</b> one.
+The tables below are that evidence, as the account saw it at each point.{% endcall %}
+{% for d in acct.decisions %}{% set ph = acct.phases[loop.index0] if loop.index0 < acct.phases|length else none %}
+<h3 class="mt">{{ d.label }}{% if d.switched and not loop.first %} · <span class="good">switched</span>{% endif %}</h3>
+{% if not d.table %}{% call demo_context() %}No Polymarket race-market history yet, so the account starts on the defaults: <b>{{ d.chosen }}</b>.{% endcall %}
+{% else %}<p class="legend">{{ d.weekends }} weekends of evidence{% if d.kind == 'season' %}; the band within the noise floor of the leader is highlighted{% endif %}. Chosen: <b>{{ d.chosen }}</b>.</p>
+<div class="scroll"><table><thead><tr><th class="l">Setup (strategy · model and settings)</th><th>P&amp;L so far</th><th>Weekends up</th><th>Worst weekend</th><th>Max drawdown</th><th>Consistency</th><th class="l"></th></tr></thead><tbody>
+{% for r in d.shown %}<tr class="{{ 'sel' if r.chosen }} {{ 'muted-row' if d.kind == 'season' and not r.in_band }}">
+  <td class="l">{{ r.setup }}</td><td class="{{ pnl_cls(r.pnl) }}">{{ r.pnl|money(true) }}</td><td>{{ r.up }}/{{ r.weekends }}</td>
+  <td>{{ r.worst|money(true) }}</td><td>{{ r.max_dd|money(true) }}</td><td>{{ "%.2f"|format(r.consistency) if r.consistency is not none else "" }}</td>
+  <td class="l">{% if r.chosen %}<b>chosen</b>{% elif r.current %}<span class="muted">running</span>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div><p class="legend">Top 5 of {{ d.candidates }} setups tested{% if d.shown|length > 5 %}, plus the one chosen or running{% endif %}.</p>{% endif %}
+{% if ph %}<p>Then ran <b>{{ ph.profile }}</b> for {{ ph.weekends }} weekends ({{ ph.first.event_name }} to {{ ph.last.event_name }} {{ ph.last.event_key[:4] }}):
+  <b class="{{ pnl_cls(ph.pnl) }}">{{ ph.pnl|money(true) }}</b>, {{ ph.up }}/{{ ph.weekends }} weekends up.</p>{% endif %}
+{% endfor %}
+<p class="legend">Evidence: each setup's saved season sweep in the Edge Finder (every weekend priced from its own sessions, traded on Polymarket's real prices and trades). Open the <a href="/lab#demo-pool">Lab's F1 demo strategy history and pools</a> to see every candidate setup, all saved pool results, and {% if is_maker %}the M1–M3/C phase definitions{% else %}the TW1/TW2 phase definitions and the separate T1/A reference profile{% endif %}.</p>
+</div>
+</section>
+{% elif acct.taker and not simple %}{% set t = acct.taker %}<section data-panel="how" hidden>
+<div class="card"><h2>How this account uses racinglines</h2>
+<p>This account follows {% if profile.basic %}<b>its picks</b>, drawn from three of our taker strategies{% else %}the <b>{{ profile.name }}</b> signals{% endif %}: after every practice and qualifying session it gets a list of trades, each with a heat rating.
+A taker never sees the model's numbers, only what to trade, the size, the most to pay, and the heat.</p>
+{% call demo_context("This demo taker's habit.") %}It doesn't take every signal: about a third, favouring hotter ones, and once it's in a market it follows that
+market's later signals to the exit. Being choosy keeps its stakes small and gives up part of the upside.{% endcall %}
+<div class="scroll"><table><thead><tr><th class="l">Heat</th><th>Markets recommended</th><th>Taken</th><th>Share taken</th><th>P&amp;L of those taken</th></tr></thead><tbody>
+{% for h in t.by_heat %}<tr><td class="l"><span class="heat h{{ h.heat }}">{{ heat_label[h.heat] }}</span></td><td>{{ h.offered }}</td><td>{{ h.taken }}</td><td>{{ "%.0f"|format(h.taken / h.offered * 100) if h.offered }}%</td>
+  <td class="{{ pnl_cls(h.pnl) }}">{{ h.pnl|money(true) }}</td></tr>{% endfor %}
+<tr class="total"><td class="l"><b>All</b></td><td>{{ t.by_heat|sum(attribute='offered') }}</td><td>{{ t.by_heat|sum(attribute='taken') }}</td><td></td><td><b>{{ t.by_heat|sum(attribute='pnl')|money(true) }}</b></td></tr>
+</tbody></table></div>
+{% if t.all_total is defined %}<p>Taking <i>every</i> recommendation over the same weekends would have made <b>{{ t.all_total|money(true) }}</b>
+  (the second line on the chart), with more capital in play at once. The table shows how each heat tier has actually done: heat is a guide, not a guarantee.</p>{% endif %}
+<p class="legend">The <a href="/lab#demo-pool">Lab's F1 demo strategy history and pools</a> shows the saved results for the TW1/TW2 decision pool and the separate T1/A recommended profile.</p>
+</div>
+</section>{% endif %}
+{% endif %}
+{% endblock %}

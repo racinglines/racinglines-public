@@ -1,0 +1,66 @@
+{% from "_macros.html" import bar, pct, venue_chips, new_badge, source_note %}
+{# One sport's body on the Markets board, loaded when its section is opened (views.board_sport). #}
+{% macro sync_flags(u) %}{% set stale = (u.sync or [])|selectattr("stale")|list %}{% if stale %}<div class="chips">{% for v in stale %}<span class="pill warn" tabindex="0" data-tooltip="exchange prices for this race may be missing or out of date: flagged when no market is linked or the newest sync is over {{ '%g'|format(v.limit) }} h old">{{ v.name }}: {% if not v.links %}no markets linked{% elif v.hours is none %}never synced{% elif v.hours < 48 %}synced {{ '%.0f'|format(v.hours) }} h ago{% else %}synced {{ '%.0f'|format(v.hours / 24) }} days ago{% endif %}</span>{% endfor %}</div>{% endif %}{% endmacro %}
+{% if s.run or s.tape or s.asof %}
+<div class="cards">
+  {% if s.run %}
+  {% for u in s.upcoming %}
+  <div class="ecard">
+    <div><h3><a href="/races/{{ u.info.race_id }}">{{ u.info.title }}</a>{% if u.new %} <a href="/markets/polymarket?show=all&sport={{ s.code }}">{{ new_badge(u.new) }}</a>{% endif %}</h3>
+      <div class="when">{{ u.info.start_date|fmt }} · {% if u.info.status == 'completed' %}<span class="good">resolved</span>{% if u.winner %} · winner {{ u.winner }}{% endif %}{% elif u.info.status == 'in_progress' %}<span class="warn">in progress</span>{% else %}{{ u.countdown }}{% endif %}{% if u.next %} · <b>next</b>{% endif %}</div></div>
+    {{ venue_chips(u.venues, u.mine) }}
+    {{ sync_flags(u) }}
+    <div>{% for o in u.top %}<div class="pr"><span>{{ o.subject }}</span>{{ bar(o.fair, o.pm_mid, "", (o.venues.kalshi.mid if o.venues and o.venues.kalshi else none)) }}<span class="num">{{ pct(o.fair) }}</span></div>{% endfor %}
+      <div class="legend">win probability{% if u.top and u.top[0].pm_mid is not none %} · <i class="sw-warn"></i>Polymarket{% endif %}</div></div>
+    <div><a href="/races/{{ u.info.race_id }}">{{ u.outcomes }} outcomes →</a></div>
+  </div>
+  {% endfor %}
+  <div class="ecard">
+    <div><h3><a href="/seasons/{{ s.code }}">{{ s.run.season }} championship</a>{% if s.season.new %} <a href="/markets/polymarket?show=all&sport={{ s.code }}">{{ new_badge(s.season.new) }}</a>{% endif %}</h3><div class="when">season-long markets</div></div>
+    {{ venue_chips(s.season.venues, s.season.mine) }}
+    <div>{% for o in s.season.top %}<div class="pr"><span>{{ o.subject }}</span>{{ bar(o.fair, o.pm_mid, "", (o.venues.kalshi.mid if o.venues and o.venues.kalshi else none)) }}<span class="num">{{ pct(o.fair) }}</span></div>{% endfor %}
+      <div class="legend">champion probability{% if s.season.top and s.season.top[0].pm_mid is not none %} · <i class="sw-warn"></i>Polymarket{% endif %}</div></div>
+    {% if s.season.constructors %}<div class="legend">Constructors: {% for o in s.season.constructors %}{{ o.subject }} {{ pct(o.fair) }}{{ " · " if not loop.last }}{% endfor %}</div>{% endif %}
+    <div><a href="/seasons/{{ s.code }}">{{ s.season.outcomes }} outcomes →</a></div>
+  </div>
+  {% elif s.asof %}
+  {% for u in s.upcoming %}
+  <div class="ecard">
+    <div><h3><a href="/races/{{ u.info.race_id }}">{{ u.info.title }}</a></h3>
+      <div class="when">{{ u.info.start_date|fmt }} · {% if u.info.status == 'completed' %}<span class="good">resolved</span>{% if u.winner %} · winner {{ u.winner }}{% endif %}{% else %}{{ u.countdown }}{% endif %}{% if u.next %} · <b>next</b>{% endif %}</div></div>
+    {{ venue_chips(u.venues, u.mine) }}
+    {{ sync_flags(u) }}
+    {% if u.info.status != 'completed' %}<div class="legend">no fair price yet: the model prices this race once a forecast is stored</div>{% endif %}
+    <div><a href="/races/{{ u.info.race_id }}">{{ u.outcomes }} outcomes →</a></div>
+  </div>
+  {% else %}<div class="ecard"><div class="legend">No upcoming race in the calendar.</div></div>{% endfor %}
+  {% elif s.tape %}
+  {% for u in s.upcoming %}
+  <div class="ecard">
+    <div><h3>{{ u.title }}</h3><div class="when">{{ u.date|fmt if u.date else "undated" }} · {{ u.status }}</div></div>
+    {% if u.exchanges %}<div class="legend">{% for x in u.exchanges %}<span class="pill live">{{ x }}</span>{% endfor %}</div>{% endif %}
+    {% if u.url %}<div><a href="{{ u.url }}">Open tape →</a></div>{% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
+</div>
+{% if (s.run or s.asof) and s.later %}<p class="legend">Later: {% for l in s.later[:6] %}<a href="/races/{{ l.race_id }}">{{ l.title }}</a>{% if l.new %} {{ new_badge(l.new) }}{% endif %} {{ l.date|fmt }}{{ " · " if not loop.last }}{% endfor %}{% if s.later|length > 6 %} · +{{ s.later|length - 6 }} more{% endif %}</p>{% endif %}
+{% if s.tape and s.later %}<p class="legend">Later: {% for l in s.later[:6] %}{% if l.url %}<a href="{{ l.url }}">{{ l.title }}</a>{% else %}{{ l.title }}{% endif %}{% if l.date %} {{ l.date|fmt }}{% endif %}{{ " · " if not loop.last }}{% endfor %}{% if s.later|length > 6 %} · <a href="/markets/tapes">+{{ s.later|length - 6 }} more on Recorded tapes →</a>{% endif %}</p>{% endif %}
+{% if (s.run or s.asof) and s.recent %}<details class="card quiet" data-remember="markets:{{ s.code }}:recent"><summary><h3>Recent results</h3><span class="sum">the last races: the winner and what we had before the race</span></summary>
+<div hx-get="/markets/sport/{{ s.code }}/recent" hx-trigger="toggle from:closest details once" hx-swap="innerHTML"><p class="legend">Loading…</p></div></details>{% endif %}
+{% endif %}
+{% if s.exchanges %}
+<div class="legend mt">Exchange data{% if not s.run %} (no model: market data only){% endif %}</div>
+<div class="scroll" data-rows="8"><table>
+<thead><tr><th class="l">Exchange</th><th>Markets</th><th>Open</th><th>Volume</th><th>Trades</th><th>Price points</th><th>Books</th><th>Synced</th></tr></thead>
+<tbody>{% for b in s.exchanges %}<tr>
+<td class="l">{% if b.url %}<a href="{{ b.url }}">{{ b.exchange_name }}</a>{% else %}{{ b.exchange_name }}{% endif %}</td>
+<td>{{ b.markets }}</td><td class="{{ 'muted' if not b.open }}">{{ b.open }}</td><td>{{ "{:,.0f}".format(b.volume) }}</td>
+{% for n in (b.trades, b.prices, b.books) %}<td class="{{ 'good' if n else 'muted' }}"{% if not n and b.coverage %} title="{{ b.coverage }}"{% endif %}>{{ "{:,}".format(n) if n else "n/a" }}</td>
+{% endfor %}
+<td>{{ b.synced|fmt }}</td>
+</tr>{% endfor %}</tbody>
+</table></div>
+<p class="legend">Counts are every row each exchange's feed has given us (archive and live buffer), never paper or demo trades. n/a: nothing stored. {% for b in s.exchanges if b.coverage %}{{ b.coverage }}{{ " " if not loop.last }}{% endfor %}</p>
+{% endif %}
+{{ source_note(s.code, s.exchanges, s.run, (s.asof.at if s.asof else none), model=(s.asof is not none)) }}

@@ -1,0 +1,19 @@
+{% extends "base.html" %}{% from "_macros.html" import empty, table, kpi, page_head %}
+{% block title %}Admin{% endblock %}
+{% block content %}
+{{ page_head("Admin", "Accounts, the activity log, the database, and the Polymarket order flow.") }}
+{% include "_admin_nav.html" %}
+<div class="kpis hero">
+  {{ kpi("Markets", totals.markets, totals.open ~ " open") }}
+  {{ kpi("Taker bets", totals.bets, "staked " ~ (totals.staked|money)) }}
+  {{ kpi("Takers' settled P&L", totals.taker_pnl, "", "money") }}
+  {{ kpi("Makers' worst case", (totals.worst|money), "", "bad") }}
+</div>
+{% if totals.replay_bets %}<p class="legend">Not included: {{ totals.replay_bets }} replay fills by Polymarket's takers (P&amp;L {{ totals.replay_pnl|money(true) }}).</p>{% endif %}
+<div class="card"><div class="section-head"><h2>Users</h2><a href="/admin/users">Manage users →</a></div>
+{{ table(users, ["username", "role", "active", "last_seen", "logins", "markets_made", "bets_against", "bets_placed", "staked"], {"username": ["/admin/users/", "id"]}) }}</div>
+<div class="card"><div class="section-head"><h2>Recent activity</h2><a href="/admin/activity">Full activity log →</a></div>
+{% if recent %}<div class="scroll"><table><thead><tr><th class="l">When</th><th class="l">User</th><th class="l">Action</th><th class="l">Detail</th><th class="l">IP</th></tr></thead><tbody>
+{% for e in recent %}<tr><td class="l">{{ e.ts|fmt }}</td><td class="l">{{ e.username or "" }} <span class="muted">{{ e.role or "" }}</span></td><td class="l">{{ e.action }}</td><td class="wrap"><code>{{ e.detail if e.detail else "" }}</code></td><td class="l">{{ e.ip or "" }}</td></tr>{% endfor %}
+</tbody></table></div>{% else %}{{ empty("No activity yet.") }}{% endif %}</div>
+{% endblock %}

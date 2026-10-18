@@ -1,0 +1,21 @@
+{% extends "base.html" %}{% from "_macros.html" import csrf, page_head %}
+{% block title %}Confirm order{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/admin">Admin</a> › <a href="/markets/linked">Linked markets</a> › Confirm order</p>
+{{ page_head("Confirm order") }}
+<div class="card">
+<p><b>{{ side }} {{ size }}</b> shares of <b>{{ link.outcome }}</b> in “{{ link.question }}” at <b>{{ price }}</b>, post-only GTC.</p>
+<p>Notional: {{ (notional|money) if notional is not none else "–" }} · model fair price {{ prob|fmt("model_prob") if prob is not none else "–" }}
+ · edge at this price {{ edge|fmt("edge") if edge is not none else "–" }} · book {{ book.best_bid if book else "?" }} / {{ book.best_ask if book else "?" }}</p>
+{% if edge is not none and edge < 0 %}<p class="warn">This price is on the wrong side of the model's fair value.</p>{% endif %}
+{% if error %}<p class="bad">Blocked: {{ error }}</p><p><a href="/markets/linked/{{ link.id }}">Back</a></p>
+{% else %}
+<p>{% if trading.enabled and trading.has_key %}<span class="bad">This will send a real order to Polymarket.</span>{% else %}Trading is not enabled: this signs the order locally as a <b>dry run</b> and records it; nothing is sent.{% endif %}</p>
+<form method="post" action="/markets/linked/{{ link.id }}/order">{{ csrf() }}
+  <input type="hidden" name="side" value="{{ side }}"><input type="hidden" name="price" value="{{ price }}"><input type="hidden" name="size" value="{{ size }}">
+  <label><input type="checkbox" name="confirm" value="yes" required> I confirm this order</label>
+  <button class="{{ 'danger' if trading.enabled and trading.has_key else 'primary' }}">{{ "Submit to Polymarket" if trading.enabled and trading.has_key else "Dry run" }}</button>
+  <a href="/markets/linked/{{ link.id }}">Cancel</a>
+</form>{% endif %}
+</div>
+{% endblock %}

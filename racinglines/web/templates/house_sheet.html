@@ -1,0 +1,15 @@
+{% extends "base.html" %}{% from "_macros.html" import page_head %}
+{% block title %}Quotes · {{ venue }}{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/book">{{ "Books" if user.role == 'admin' else "My book" }}</a> › <a href="/book/quotes">Quotes</a> › Sheet</p>
+{% set head_title %}{{ venue }} · {{ cat }} · quotes{% endset %}
+{{ page_head(head_title) }}
+<p class="muted">As of {{ now }} (Vancouver). Price = stake per $1 payout (0.10 → stake $10, get $100). Prices can change until a bet is recorded.</p>
+{% for kind, ms in groups %}
+<div class="card"><h2>{{ {"race_win": "To win", "race_podium": "Podium (top 3)", "race_top10": "Top 10 / points", "race_make_final": "Makes the Final", "rank_up": "Championship rank goes up", "rank_down": "Championship rank goes down"}.get(kind, kind) }}</h2>
+<div class="scroll"><table><thead><tr><th class="l">Rider</th><th class="l">Maker</th>{% if kind.startswith('rank') %}<th>Now</th>{% endif %}<th>YES</th><th>NO</th></tr></thead><tbody>
+{% for mk in ms %}<tr><td class="l">{{ mk.athlete }}</td><td class="l">{{ mk.maker }}</td>{% if kind.startswith('rank') %}<td>#{{ mk.context.current_rank if mk.context else "" }}</td>{% endif %}
+<td>{{ "%.2f"|format(mk.yes_price) if mk.yes_price is not none else "–" }}</td><td>{{ "%.2f"|format(mk.no_price) if mk.no_price is not none else "–" }}</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endfor %}
+{% endblock %}

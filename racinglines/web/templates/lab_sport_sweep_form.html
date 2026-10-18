@@ -1,0 +1,25 @@
+{% from "_macros.html" import csrf %}
+<form method="post" action="/lab/run" class="ecard sweep-form{{ " sel" if sel_job == jt.code }}">
+  {{ csrf() }}<input type="hidden" name="job" value="{{ jt.code }}">
+  <div><h3>{{ jt.label }}</h3><div class="when">{{ jt.what }} · {{ jt.minutes }}</div></div>
+  <p class="legend">This runs a historical simulation, not a live strategy. It saves a season sweep that appears in Edge Finder, where you can compare each strategy's P&amp;L by weekend.</p>
+  <div class="jobform"><label><span>Season</span><select name="year">{% for y in ("2026", "2025") %}<option {{ 'selected' if y == sweep_form.year|string }}>{{ y }}</option>{% endfor %}</select></label></div>
+  {% set essential = ["variant", "venue", "min_edge", "max_stake"] + (["max_disagree"] if makers_on() else []) %}
+  {% macro field(s) %}{% set v = sweep_form.start.get(s.name) %}
+    <label title="{{ s.help }}"><span>{{ s.label }}</span>
+    {% if s.type == 'bool' %}<span class="check"><input type="hidden" name="{{ s.name }}" value="false"><input type="checkbox" name="{{ s.name }}" value="true" {{ 'checked' if v }}> on</span>
+    {% elif s.type == 'choice' %}<select name="{{ s.name }}">{% for ch in s.choices %}<option value="{{ ch }}" {{ 'selected' if ch == v }}>{{ ch }}</option>{% endfor %}</select>
+    {% elif s.type == 'multi' %}<input type="hidden" name="{{ s.name }}__present" value="1"><span class="checks">{% for ch in s.choices %}<label class="inline"><input type="checkbox" name="{{ s.name }}" value="{{ ch }}" {{ 'checked' if ch in v }}> {{ ch|replace('after ', '')|kind }}</label>{% endfor %}</span>
+    {% elif s.type == 'map' %}<input name="{{ s.name }}" value="{{ v or '' }}" placeholder="not set, e.g. race_h2h=0.05" maxlength="200" autocomplete="off">
+    {% elif s.type in ('float', 'int') %}<input name="{{ s.name }}" type="number" value="{{ '' if v is none else v }}" {% set r = ui_range(s.name, v, s.min, s.max) %}min="{{ r[0] }}" max="{{ r[1] }}" step="{{ '1' if s.type == 'int' else 'any' }}"{% if s.default is none %} placeholder="not set"{% endif %}>
+    {% else %}<input name="{{ s.name }}" value="{{ v or '' }}" maxlength="200">{% endif %}</label>{% endmacro %}
+  {% set mains = [] %}{% for g, glabel, items in sweep_form.groups %}{% for s in items if s.name in essential %}{% set _ = mains.append(s) %}{% endfor %}{% endfor %}
+  {% if mains %}<div class="jobform main-settings">{% for s in mains %}{{ field(s) }}{% endfor %}</div>{% endif %}
+  <details class="more"><summary>All settings</summary>
+  {% for g, glabel, items in sweep_form.groups %}
+  <fieldset class="settings-group"{% if g == "maker" and not makers_on() %} hidden{% endif %}><legend>{{ glabel }}</legend><div class="jobform">
+  {% for s in items if s.name not in essential %}{{ field(s) }}{% endfor %}</div></fieldset>
+  {% endfor %}
+  </details>
+  <div><button class="primary">Run strategy sweep</button></div>
+</form>

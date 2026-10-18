@@ -1,0 +1,21 @@
+[3m                                            book price                                            [0m
+                                                                                                  
+ [1m [0m[1mid[0m[1m [0m [1m [0m[1mselection          [0m[1m [0m [1m [0m[1modds[0m[1m [0m [1m [0m[1m book[0m[1m [0m [1m [0m[1mmodel[0m[1m [0m [1m [0m[1mmarket[0m[1m [0m [1m [0m[1mEV model[0m[1m [0m [1m [0m[1mEV market[0m[1m [0m [1m [0m[1mmodel method[0m[1m [0m 
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  1    Max Verstappen (NO)   1.39   72.0%   85.8%    69.5%   [1;32m  +19.1%[0m   [31m    -3.5%[0m   [2msingle      [0m  
+  2    Kimi Antonelli (NO)   2.41   41.5%   62.2%    40.5%   [1;32m  +49.8%[0m   [31m    -2.4%[0m   [2msingle      [0m  
+  3    Max Verstappen (NO)   2.60   38.5%   61.7%    38.0%   [1;32m  +60.3%[0m   [31m    -1.3%[0m   [2msingle      [0m  
+                                                                                                  
+[2;3m        polymarket · event 2026-17 · f1 · captured 2026-10-09T10:05Z · odds dollars · USD         [0m
+[2m╭─[0m[2m───────────────────────────────────────────────────[0m[2m assumptions [0m[2m────────────────────────────────────────────────────[0m[2m─╮[0m
+[2m│[0m [2m• EV is per unit staked: probability x decimal payout - 1; decimal payout = 1 / the book's implied probability.[0m      [2m│[0m
+[2m│[0m [2m• Legs on different races are independent: the slip probability is the product of their probabilities.[0m               [2m│[0m
+[2m│[0m [2m• Legs on the same race are priced jointly from simulations when they are available (passed in, or a stored combo [0m   [2m│[0m
+[2m│[0m [2mrun with exactly these legs); otherwise the product of the marginals, flagged 'correlated: EV approximate'.[0m          [2m│[0m
+[2m│[0m [2m• The market's slip probability is the product of its legs' prices: no exchange lists the slip itself.[0m               [2m│[0m
+[2m│[0m [2m• Model and market are shown side by side, never blended (owner, 2026-10-07).[0m                                        [2m│[0m
+[2m│[0m [2m• The market price is the freshest linked exchange's mid (bid/ask midpoint, else its last price, else the tape's).[0m   [2m│[0m
+[2m│[0m [2m• As of 2026-10-09T10:05Z: the model's newest run cut off by then, and each exchange's last tape price by then (no [0m  [2m│[0m
+[2m│[0m [2mbid/ask).[0m                                                                                                            [2m│[0m
+[2m│[0m [2mblend: none (owner, 2026-10-07; docs/sportsbook/slips.md)[0m                                                            [2m│[0m
+[2m╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯[0m

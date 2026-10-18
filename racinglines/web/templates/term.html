@@ -1,0 +1,51 @@
+{% extends "base_public.html" %}{% from "_macros.html" import source_note %}
+{% block title %}racinglines · quickstart{% endblock %}
+{% block main_class %}termpage{% endblock %}
+{% block content %}
+{# Public: the quickstart's CLI runs, recorded (racinglines/web/term/demos.toml), not a live shell. Re-record with
+   scripts/demo/record_term.py when the commands change. #}
+<header class="lp-top">
+  <a class="lp-brand" href="/"><img src="/static/brand/logo.svg" alt="" width="32" height="32"><span>racing<b>lines</b></span></a>
+</header>
+<h1>Quickstart</h1>
+<p class="lede">racinglines is a Python package first: the web app and the hosted MCP server run the same code. These are
+  the quickstart's commands, run with <code>--demo</code> on a made-up Formula 1 world with a Mario Kart grid that ships
+  with the package, recorded and replayed here; nothing runs on this page.
+  {% if parts|length > 1 %}The F1 parts after it are recorded on the real 2026 Singapore Grand Prix weekend: its data and the
+  Polymarket prices we recorded.{% endif %}
+  Press Play on each step to run it, at your own pace alongside your own terminal.</p>
+{# Steps group under their pack section ([[quickstart]] section = "..."), numbered within it; no sections, one list.
+   With more than one part, a part nav (owner, 2026-10-12: large tabs across the top on a phone, a sidebar on a wide
+   screen) shows one part at a time (app.js); without JS every part shows and the nav links jump to them. #}
+{% set named = parts|selectattr(0)|list %}
+{% set nav = named|length > 1 %}
+<div class="{{ 'term-layout' if nav else '' }}"{% if nav %} data-term-parts{% endif %}>
+{% if nav %}<nav class="term-nav" aria-label="Quickstart parts">{% for section, steps in parts %}
+  <a href="#part-{{ loop.index }}" data-term-tab="part-{{ loop.index }}"><span class="term-nav-n">Part {{ loop.index }}</span> {{ section }}</a>{% endfor %}
+</nav>{% endif %}
+<div class="term-parts">
+{% for section, steps in parts %}
+<div class="term-partbox" id="part-{{ loop.index }}">
+{% if section %}<h2 class="term-part">{% if nav %}Part {{ loop.index }}: {% endif %}{{ section }}</h2>{% endif %}
+{% for d in steps %}
+<section class="term-demo" id="{{ d.id }}">
+  <h3>{{ loop.index }}. {{ d.title }}</h3>
+  <p>{{ d.about }}</p>
+  <div class="term" data-term>
+    <div class="term-bar" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div class="term-cmd"><span class="term-prompt" aria-hidden="true">$ </span><code data-term-cmd>{{ d.command }}</code><button type="button" class="term-play" data-term-play hidden>Play</button></div>
+    {% if d.html %}<div class="term-body" data-term-out>{{ d.html|safe }}</div>{% endif %}{# record = false: typed, not run #}
+  </div>
+</section>
+{% endfor %}
+{% if nav and not loop.last %}<p class="term-next"><a href="#part-{{ loop.index + 1 }}" data-term-tab="part-{{ loop.index + 1 }}">Next: Part {{ loop.index + 1 }}, {{ parts[loop.index][0] }} →</a></p>{% endif %}
+</div>
+{% else %}
+<p>No recordings yet.</p>
+{% endfor %}
+</div>
+</div>
+{% if demos and recorded %}<p class="hint">Recorded {{ recorded }}.</p>{% endif %}
+{% if parts|length > 1 %}{{ source_note("f1", ["polymarket"], model=true) }}{% endif %}{# the F1 parts on real data #}
+<p class="hint"><a href="/#account">Try the web app</a> · <a href="/racinglines101">What is racinglines?</a></p>
+{% endblock %}

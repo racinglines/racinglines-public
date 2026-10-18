@@ -1,0 +1,61 @@
+{% extends "base.html" %}{% from "_macros.html" import pnl_cls, bar, pct, venue_chips, new_badge, page_head, status_badge, source_note %}
+{% block title %}Markets{% endblock %}
+{% block content %}
+{% call page_head("Markets", "Every sport we price: what's next, what's live on each venue, and how we did lately.") %}<a href="/markets/polymarket">All Polymarket markets →</a>{% if kalshi %} <a href="/markets/kalshi">All Kalshi markets →</a>{% endif %}{% for v in schema_exchanges %} <a href="/markets/{{ v.code }}">All {{ v.name }} markets →</a>{% endfor %}{% if tapes %} <a href="/markets/tapes">Recorded tapes →</a>{% endif %}{% endcall %}
+
+<div class="kpis">
+  <div class="kpi"><div class="l">Exchange outcomes we price</div><div class="v">{{ h.outcomes }}</div><div class="s">{{ h.markets }} markets · {{ ("$" ~ "{:,.1f}M".format(h.volume / 1e6)) if h.volume >= 1e6 else (h.volume|money(false, false)) }} traded</div></div>
+  <div class="kpi"><div class="l">Order books recording</div><div class="v {{ 'good' if h.recording else 'muted' }}">{{ h.recording or "off" }}</div><div class="s">{% if h.recorded_at %}last {{ h.recorded_at|fmt }}{% elif user.role == 'admin' %}start <code>racinglines markets record</code>{% else %}not yet{% endif %}</div></div>
+  <div class="kpi"><div class="l"><span tabindex="0" data-tooltip="Brier score: mean squared error of the win probabilities, 0 is perfect">Model accuracy</span></div><div class="v">{{ "%.3f"|format(h.brier_win) if h.brier_win is number else "—" }}</div><div class="s">{% if h.brier_win is number %}win Brier, latest backtest · lower is better{% if h.brier_grid is number %} · grid-only {{ "%.3f"|format(h.brier_grid) }}{% endif %}{% else %}no backtest yet{% if user.role == 'admin' %} · <a href="/lab#run">run one</a>{% endif %}{% endif %}</div></div>
+  {% if not (alpha_layout is defined and alpha_layout()) %}<div class="kpi"><div class="l">My <span tabindex="0" data-tooltip="markets in your private book that are still open">open markets</span></div><div class="v">{{ h.my_open }}</div><div class="s">staked against me {{ h.my_staked|money(false, false) }} · worst case <span class="{{ 'bad' if h.my_worst < 0 }}">{{ h.my_worst|money(false, false) }}</span></div></div>{% endif %}{# the private book: archived for the alpha (web/layout.py) #}
+  <div class="kpi"><div class="l">Model jobs running</div><div class="v">{{ h.jobs_active }}</div><div class="s"><a href="/lab#run">launch a backtest or scenario</a></div></div>
+</div>
+{% include "_recorders.html" %}
+
+{% for s in sports %}
+<details class="card" data-remember="markets:sport:{{ s.code }}">
+<summary class="sport-sum"><div class="sport-head"><h2 class="h-inline">{{ s.name }}</h2>{% if s.code != "f1" and fantasy_on is defined and fantasy_on() %} <span class="pill no" tabindex="0" data-tooltip="Fantasy trading is Formula 1 only for now: this sport's markets show prices but can't be traded">prices only · fantasy is F1 for now</span>{% endif %}{% if s.calibration == "baseline" and not s.tape %} <span class="pill warn" tabindex="0" data-tooltip="a model whose settings are not tuned yet: a rough guide, not a calibrated fair price">baseline prices</span>{% endif %} <span class="sum">{% if s.run %}live prices from run <a href="/lab/runs/{{ s.run.id }}">#{{ s.run.id }}</a> · {{ s.run.created_at|fmt }}{% elif s.asof %}model: pre-race prices for {{ "{:,}".format(s.asof.races) }} past races (replay saves, latest {{ s.asof.at|fmt }}) · no live forecast yet, so upcoming races show exchange prices only{% else %}market data only · no model{% endif %}</span></div>
+{% if s.status %}<div class="qstats">{{ status_badge("races", s.status.races) }}{{ status_badge("markets", s.status.markets) }}{{ status_badge("backtests", s.status.backtests) }}{{ status_badge("sweeps", s.status.sweeps) }}<span tabindex="0" data-tooltip="simulated trades in fantasy bucks; nothing is sent to an exchange">{{ status_badge("paper", s.status.paper) }}</span></div>{% endif %}
+</summary>
+<div class="sport-body" hx-get="/markets/sport/{{ s.code }}" hx-trigger="toggle from:closest details once" hx-swap="innerHTML"><p class="legend">Loading…</p></div>
+</details>
+{% endfor %}
+{% if disagree %}<details class="card" data-remember="markets:disagree" open><summary><h2>Cross-venue disagreement</h2><span class="sum">{{ disagree.n_above }} of {{ disagree.rows|length }} outcomes above fees · last tick {{ disagree.last|fmt }}</span></summary>
+<p class="legend">Polymarket vs Kalshi on every outcome listed on both, at the log's latest tick{% if user.role == 'admin' %} (<code>racinglines markets disagree</code>){% endif %}. Gap = Kalshi mid − Polymarket mid; net = |gap| − both <span tabindex="0" data-tooltip="cost to buy or sell right now">taker fees</span>; edge = the better taker trade vs our fair, net of fees. <span tabindex="0" data-tooltip="no recent trade activity; pricing is theoretical">Greyed rows</span>: a venue's tape shows nothing traded in the prior 24 h, so the gap is on paper.</p>
+<div class="scroll" data-rows="20" data-filter="filter outcomes"><table>
+<thead><tr><th class="l">Outcome</th><th class="l hide-sm">Event</th><th>Polymarket</th><th>Kalshi</th><th>Fair</th><th class="hide-sm">PM edge</th><th class="hide-sm">Kalshi edge</th><th class="hide-sm">Gap</th><th>Net</th><th class="hide-sm">At (UTC)</th></tr></thead>
+<tbody>{% for r in disagree.rows %}<tr{% if not r.liquid %} class="muted"{% endif %}>
+<td class="l">{{ r.kind_label }} · {{ r.subject }}</td><td class="l hide-sm">{% if r.rid %}<a href="/races/{{ r.rid }}">{{ r.event }}</a>{% else %}{{ r.event }}{% endif %}</td>
+<td>{{ pct(r.pm_mid, 1) }}{% if r.pm_bid is not none and r.pm_ask is not none %} <span class="muted">{{ pct(r.pm_bid, 1) }}–{{ pct(r.pm_ask, 1) }}</span>{% endif %}</td>
+<td>{{ pct(r.kalshi_mid, 1) }}{% if r.kalshi_bid is not none and r.kalshi_ask is not none %} <span class="muted">{{ pct(r.kalshi_bid, 1) }}–{{ pct(r.kalshi_ask, 1) }}</span>{% endif %}</td>
+<td>{{ pct(r.fair, 1) }}</td>
+<td class="hide-sm">{% if r.pm_edge is not none %}<span class="{{ 'good' if r.pm_edge > 0 else 'muted' }}">{{ r.pm_side }} {{ "%+.1f"|format(r.pm_edge * 100) }}</span>{% else %}–{% endif %}</td>
+<td class="hide-sm">{% if r.kalshi_edge is not none %}<span class="{{ 'good' if r.kalshi_edge > 0 else 'muted' }}">{{ r.kalshi_side }} {{ "%+.1f"|format(r.kalshi_edge * 100) }}</span>{% else %}–{% endif %}</td>
+<td class="hide-sm">{{ "%+.1f"|format(r.gap * 100) }}</td><td{% if r.above %} class="good"{% endif %}>{{ "%+.1f"|format(r.gap_net * 100) }}</td><td class="hide-sm">{{ r.ts|fmt }}</td>
+</tr>{% endfor %}</tbody></table></div>
+{% if disagree.days %}<div class="legend">Last {{ disagree.window }} days, liquid rows above fees: {% for d in disagree.days %}{{ d.day }} {{ d.above_fees }}/{{ d.liquid }}{{ " · " if not loop.last }}{% endfor %}</div>{% endif %}
+{{ source_note(none, ["polymarket", "kalshi"], model=true) }}
+</details>{% endif %}
+<details class="card" data-remember="markets:calendar" open>
+<summary><h2>Calendar</h2><span class="sum">{{ calendar|length }} events across every sport and venue</span></summary>
+<p class="legend">Every race weekend (modeled sports) and every recorded exchange event (tape-only sports). A tape-only sport has no single cross-venue event, so each exchange's own listing is its own day.</p>
+<div data-calendar data-events='{{ cal_events|tojson }}'>
+<div class="tt cal-tools">
+<select data-cal-filter="sport" aria-label="Filter by sport"><option value="">All sports</option>{% for code, name in cal_sports %}<option value="{{ code }}">{{ name }}</option>{% endfor %}</select>
+<select data-cal-filter="exchange" aria-label="Filter by exchange"><option value="">All exchanges</option>{% for x in cal_exchanges %}<option value="{{ x }}">{{ x }}</option>{% endfor %}</select>
+<input type="search" data-cal-filter="q" placeholder="Filter by name" aria-label="Filter by name">
+</div>
+<div class="cal-nav">
+<button type="button" class="link" data-cal-prev aria-label="Previous month">‹</button>
+<h3 data-cal-label></h3>
+<button type="button" class="link" data-cal-next aria-label="Next month">›</button>
+<button type="button" class="link" data-cal-today>Today</button>
+</div>
+<div class="cal-weekdays"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>
+<div class="cal-grid" data-cal-grid></div>
+</div>
+{{ source_note(cal_sports|map("first")|list, cal_exchanges) }}
+</details>
+<p class="legend mt">Browse <a href="/markets/polymarket">all Polymarket markets</a> ·{% if kalshi %} <a href="/markets/kalshi">all Kalshi markets</a> ·{% endif %}{% for v in schema_exchanges %} <a href="/markets/{{ v.code }}">all {{ v.name }} markets</a> ·{% endfor %}{% if tapes %} <a href="/markets/tapes">recorded tapes</a>{% endif %}. Bars: our fair probability; the orange tick is the exchange price.</p>
+{% if sport_status %}{% include "_sport_status.html" %}{% endif %}
+{% endblock %}

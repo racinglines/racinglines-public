@@ -1,0 +1,43 @@
+{% extends "base.html" %}{% from "_macros.html" import empty, paper_banner, demo_context, flash, page_head, source_note %}
+{% block title %}F1 (Polymarket){% endblock %}
+{% block content %}
+{{ page_head("F1 (Polymarket)", "Every open F1 market on Polymarket (" ~ n_markets ~ " outcomes; synced " ~ synced|fmt ~ ")" ~ (", with " ~ ("your picks' current call" if profile.basic else profile.name ~ "'s current call") ~ " on each: which side, how many shares, the most to pay, and how hot it is" if profile else "") ~ ". Prices are Polymarket's, per $1 payout.") }}
+{{ paper_banner(signals_nav) }}
+{{ flash(msg) }}
+{{ source_note("f1", ["polymarket"]) }}
+{% if sport_status %}{% include "_sport_status.html" %}{% endif %}
+{% if profile %}<p class="legend">Heat grades how much the model expects an entry to earn:
+  <span class="heat h1">warm</span> <span class="heat h2">hot</span> <span class="heat h3">very hot</span>. It's a guide, not a promise.
+  Calls update after every practice and qualifying session.</p>{% endif %}
+
+{% macro event_card(e, h="h3") %}
+<div class="card"><{{ h }}><a href="https://polymarket.com/event/{{ e.slug }}" target="_blank" rel="noopener">{{ e.title }} ↗</a></{{ h }}>
+<p class="muted">ends {{ e.end_date|fmt }}{% if e.calls %} · <b>{{ e.calls }}</b> call{{ "s" if e.calls != 1 }}{% endif %}</p>
+<div class="scroll"><table><thead><tr><th class="l">Outcome</th><th>Bid</th><th>Ask</th><th>Price</th><th title="Polymarket's total traded volume for this outcome's market">Volume</th><th class="l">{{ (profile.name.split(' ')[0] ~ "'s call") if profile and not profile.basic else "Call" }}</th></tr></thead><tbody>
+{% for r in e.rows %}<tr class="{{ '' if r.call.action else 'muted-row' }}">
+  <td class="l">{{ r.subject }} <span class="muted">{{ r.prediction|kind if r.prediction != 'unmodeled' }}</span></td>
+  <td>{{ "%.2f"|format(r.last_bid) if r.last_bid is not none }}</td><td>{{ "%.2f"|format(r.last_ask) if r.last_ask is not none }}</td>
+  <td>{{ "%.3f"|format(r.mid) if r.mid is not none else "–" }}</td><td>{{ (r.volume|money(false, false)) if r.volume is not none else "–" }}</td>
+  <td class="l">{% if r.call.action %}<b>BUY {{ r.call.side }}</b> {{ "%.0f"|format(r.call.shares) }} sh @ ≤{{ "%.2f"|format(r.call.limit) }} <span class="muted">({{ r.call.cost|money(false, false) }})</span>{% if r.heat_label %} <span class="heat h{{ r.call.heat }}">{{ r.heat_label }}</span>{% endif %}{% else %}<span class="muted">{{ r.call.why }}</span>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endmacro %}
+
+<h2>Upcoming races</h2>
+{% for rc in races %}
+<h3 class="mt">{{ rc.name }}{% if rc.location %} · {{ rc.location }}{% endif %} <span class="muted small">· race {{ rc.start|fmt }}</span></h3>
+{% for e in rc.events %}{{ event_card(e, "h4") }}{% else %}
+<p class="muted">Polymarket hasn't listed markets for this race yet. They usually appear 3 to 4 weeks before the race; they'll show here{% if profile %}, with {{ "your picks" if profile.basic else profile.name.split(' ')[0] ~ "'s calls" }},{% endif %} as soon as they do.</p>
+{% endfor %}
+{% else %}{{ empty("No upcoming races yet.") }}
+{% endfor %}
+
+{% if season %}<h2 class="mt">Season markets</h2>
+{% if profile %}<p class="legend">{{ "Your picks cover" if profile.basic else profile.name ~ " trades" }} race-weekend markets only, so these carry no call.</p>{% endif %}
+{% for e in season %}{{ event_card(e) }}{% endfor %}{% endif %}
+
+{% if other %}<h2 class="mt">Everything else</h2>
+<p class="legend">Props, and markets of races already run that Polymarket hasn't resolved yet.</p>
+{% for e in other %}{{ event_card(e) }}{% endfor %}{% endif %}
+
+{% call demo_context() %}Takers trade directly on Polymarket: there's no maker on the other side of these calls in the app. The demo taker takes about a third of them (hotter ones more often); its paper trades are on <a href="/positions">Positions</a> and <a href="/strategy">Strategy</a>.{% endcall %}
+{% endblock %}

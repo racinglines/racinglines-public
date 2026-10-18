@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% from "_macros.html" import table, page_head %}
+{% block title %}Run {{ run.id }}{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/lab">Lab</a> › Run #{{ run.id }}</p>
+{% set head_title %}Model run #{{ run.id }} · {{ run.kind }}{% endset %}
+{{ page_head(head_title) }}
+<p class="muted">{{ run.competition }} {{ run.season or "" }} {{ run.category_code or "" }} · created {{ run.created_at|fmt }} · data through {{ run.data_through|fmt }} · code {{ run.code_version }}</p>
+<details class="card"><summary>Parameters</summary><pre>{{ run.params }}</pre></details>
+{% for name, (cols, rs) in metrics.items() %}
+<div class="card"><h2>Metrics: {{ name }}</h2>{{ table(rs, cols) }}</div>
+{% endfor %}
+{% for p in preds %}
+<details class="card" data-remember="run:{{ run.id }}:{{ loop.index }}"{% if loop.first %} open{% endif %}><summary><h2>Predictions: {% if p.event_id %}<a href="/events/{{ p.event_id }}">{{ p.venue }}</a> ({{ p.target }}){% else %}{{ p.target }}{% endif %}</h2><span class="sum">{{ p.table|length }} rows</span></summary>
+{{ table(p.table, pred_cols, {"athlete": ["/athletes/", "athlete_id"]}, cap=20, filter="Filter by athlete") }}</details>
+{% endfor %}
+{% if standings %}<div class="card"><h2>Standings</h2>{{ table(standings, stand_cols, {"athlete": ["/athletes/", "athlete_id"]}, cap=20, filter="Filter by athlete") }}</div>{% endif %}
+{% endblock %}

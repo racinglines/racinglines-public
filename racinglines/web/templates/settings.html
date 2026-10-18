@@ -1,0 +1,111 @@
+{% extends "base.html" %}{% from "_macros.html" import csrf, flash, page_head %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+{{ page_head("Settings") }}
+{{ flash(success) }}
+{{ flash(error) }}
+<div class="card"><h2>Email & Preferences</h2>
+<form method="post" action="/settings">{{ csrf() }}
+  <label><span>Email</span><input name="email" type="email" value="{{ email }}" placeholder="your@email.com" size="32"></label>
+  <p class="muted">Your email helps with password resets and notifications. It will never be shared.</p>
+
+  <label><span>Exchange</span>
+    <div class="radio-group">
+      <label><input type="radio" name="exchange" value="polymarket" {% if exchange == 'polymarket' %}checked{% endif %}> Polymarket</label>
+      <label><input type="radio" name="exchange" value="kalshi" {% if exchange == 'kalshi' %}checked{% endif %}> Kalshi</label>
+      <label><input type="radio" name="exchange" value="both" {% if exchange == 'both' %}checked{% endif %}> Both</label>
+    </div>
+  </label>
+
+  <label><span>Sports</span>
+    <div class="checkbox-group">
+      <label><input type="checkbox" name="sports" value="f1" {% if 'f1' in sports %}checked{% endif %}> Formula 1</label>
+      {% if 'motogp' not in hidden_sports %}<label><input type="checkbox" name="sports" value="motogp" {% if 'motogp' in sports %}checked{% endif %}> MotoGP</label>{% endif %}
+      <label><input type="checkbox" name="sports" value="nascar" {% if 'nascar' in sports %}checked{% endif %}> NASCAR</label>
+    </div>
+  </label>
+
+  <button class="primary mt">Save Settings</button>
+</form>
+</div>
+
+{% if mcp_available %}{# the public release has no MCP server (oss/manifest.toml) #}
+<div class="card"><h2>Connect Claude (MCP)</h2>
+<p class="muted">Let Claude, or any MCP client, read racinglines data and queue Lab jobs as you. Server: <code>{{ mcp_url }}</code></p>
+<p class="muted">Pro access includes shared race data and Lab research, plus your own positions, signals and jobs.
+Other accounts' records and jobs are not accessible. SQL and audit tools are admin-only; demo accounts cannot connect.</p>
+{% if not mcp_allowed %}
+<p class="warning">MCP access is open to {{ mcp_roles }} accounts; ask an admin if you need it.</p>
+{% else %}
+<p>In claude.ai or Claude Desktop: Settings &gt; Connectors &gt; Add custom connector, URL <code>{{ mcp_url }}</code>, then
+   Connect and Allow. In Claude Code: <code>claude mcp add --transport http racinglines {{ mcp_url }}</code>, then <code>/mcp</code>.
+   No token to copy: you sign in here.</p>
+<div id="mcp-signins">
+{% if mcp_clients %}
+  <p class="muted">Signed in from: {% for name, at in mcp_clients.items() %}{{ name }} (last {{ at }}){% if not loop.last %}, {% endif %}{% endfor %}.
+  <button type="button" class="danger" id="disconnect-btn">Disconnect all</button></p>
+{% endif %}
+</div>
+<h3>Or a token</h3>
+<p class="muted">For scripts and clients without sign-in.</p>
+<div id="mcp-tokens">
+  <p class="muted" id="token-status">{% if mcp_issued_at %}You have a token, issued {{ mcp_issued_at }}. A new one replaces it.{% else %}You have no token yet.{% endif %}</p>
+  <p><button class="primary" id="generate-token-btn">{% if mcp_issued_at %}Replace token{% else %}Get a token{% endif %}</button>
+     <button type="button" class="danger" id="revoke-token-btn" {% if not mcp_issued_at %}style="display: none;"{% endif %}>Revoke</button></p>
+  <div id="token-display" style="display: none;" class="token-box">
+    <p class="warning">Copy this now: it is shown once. Anyone holding it reads racinglines as you.</p>
+    <div class="token-container">
+      <input type="text" id="token-value" readonly size="56">
+      <button type="button" class="copy-btn" data-copy="#token-value">Copy</button>
+    </div>
+    <p class="muted">Claude Code, in a terminal:</p>
+    <div class="token-container">
+      <input type="text" id="token-cmd" readonly size="56">
+      <button type="button" class="copy-btn" data-copy="#token-cmd">Copy</button>
+    </div>
+  </div>
+</div>
+<script>
+const csrfBody = () => { const f = new FormData(); f.append('csrf_token', '{{ csrf_token }}'); return f; };
+async function post(url) {
+  const res = await fetch(url, { method: 'POST', body: csrfBody() });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { alert(data.detail || ('Error ' + res.status)); return null; }
+  return data;
+}
+document.getElementById('generate-token-btn').addEventListener('click', async function() {
+  const data = await post('/api/settings/token/generate');
+  if (!data) return;
+  document.getElementById('token-value').value = data.token;
+  document.getElementById('token-cmd').value =
+    `claude mcp add --transport http racinglines ${data.url} --header "Authorization: Bearer ${data.token}"`;
+  document.getElementById('token-display').style.display = 'block';
+  document.getElementById('token-status').textContent = 'Token issued just now; any earlier one stopped working.';
+  document.getElementById('revoke-token-btn').style.display = '';
+  this.textContent = 'Replace token';
+});
+document.getElementById('revoke-token-btn').addEventListener('click', async function() {
+  if (!confirm('Revoke your MCP token? Clients using it stop working at once.')) return;
+  if (!await post('/api/settings/token/revoke')) return;
+  document.getElementById('token-display').style.display = 'none';
+  document.getElementById('token-status').textContent = 'You have no token.';
+  document.getElementById('generate-token-btn').textContent = 'Get a token';
+  this.style.display = 'none';
+});
+const dc = document.getElementById('disconnect-btn');
+if (dc) dc.addEventListener('click', async function() {
+  if (!confirm('Disconnect every Claude sign-in? Clients will ask you to sign in again.')) return;
+  if (await post('/api/settings/mcp/disconnect')) document.getElementById('mcp-signins').textContent = 'Disconnected.';
+});
+document.querySelectorAll('.copy-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    navigator.clipboard.writeText(document.querySelector(this.dataset.copy).value);
+    this.textContent = 'Copied!';
+    setTimeout(() => { this.textContent = 'Copy'; }, 2000);
+  });
+});
+</script>
+{% endif %}
+</div>
+{% endif %}
+{% endblock %}

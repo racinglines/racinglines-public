@@ -1,0 +1,228 @@
+# Formula 1: what differs from other sports, as data. Read by racinglines/sports.py;
+# the code keeps its own constant names (e.g. inputs/laps.py SESSION_MINUTES) and takes the
+# values from here. Changing a value here changes results: re-run the tests.
+
+[sport]
+code = "f1"
+name = "Formula 1"
+result_kind = "position"          # results are finishing positions
+model_family = "global"           # the one engine (racinglines/models/model_global.py), with [model] below
+pricing_model = "racinglines.models.model_global:GlobalModel"   # every modelled sport's (docs/backtest-core.md)
+# F1's engine before the one engine, kept runnable for comparisons (`racinglines backtest walk-forward f1 --model
+# f1_sector_sim`): the same laps core and settings, so its prices equal the engine's (tests/test_one_engine.py)
+challengers = { f1_sector_sim = "racinglines.models.race_model:PositionSim" }
+display_order = 0
+results_modules = ["racinglines.sources.fastf1"]   # what fetches its results (`backtest coverage`)
+
+[league]
+code = "fia_f1"
+name = "FIA Formula One World Championship"
+organizer = "FIA / Formula One Group"
+
+[competition]
+code = "f1_wdc"
+name = "Formula 1 World Championship (Drivers)"
+categories = { DRV = ["Drivers", "X", "elite"] }
+
+[model]
+# The one engine's inputs (racinglines/models/inputs/__init__.py): they pick the laps core (models/inputs/laps_core.py,
+# the F1 engine that was race_model.PositionSim) and the layers it reads: lap pace and the finishing model
+# (inputs/laps.py), the car's sector fit (sectors: setting track_features), the practice prior (inputs/practice.py:
+# practice_prior), the qualifying order as the grid, moved by confirmed penalties (inputs/grid.py). Decision log
+# 2026-10-11 "One engine" (provisional, staging only): every price as before.
+inputs = ["results", "qualifying", "grid", "practice", "laps", "sectors"]
+name = "f1_sector_sim"            # model_runs.model of its runs: the name saved runs, Edge Finder and golden runs match
+# The results level (`racinglines backtest walk-forward f1 --model global`: finishing positions only) reads these
+# hooks; no setting there is tuned.
+source = "f1timing"               # the events whose race results are the history
+group = "team"                    # results.team: the constructor, for the optional team-form prior
+
+[model.defaults]
+# The engine's per-sport defaults: F1's settings as they were (racinglines/pipelines/sweep_settings.py, the model
+# group; decision-log entries in docs/f1-roadmap.md). Equal to the code's, so every settings key and price is
+# unchanged (tests/test_one_engine.py pins them). The live and sweep profiles pick their variant themselves
+# (pipelines/profiles.py: gridq+pretrain+reset); the default variant is the baseline.
+variant = "baseline"
+sims = 4000
+half_life_days = 120.0            # recency half-life of the pace models (inputs/laps.py HALF_LIFE_DAYS)
+track_features = true             # the car's fast/slow-sector profile matched to the track (input "sectors")
+practice_prior = true             # the weekend's practice laps once they exist (input "practice")
+ridge_team = 2.0                  # team base pace shrinkage, in events (RIDGE_A)
+ridge_slope = 6.0                 # fast/slow-sector slope shrinkage, in events (RIDGE_B)
+driver_prior_n = 3.0              # driver-vs-teammate offset shrinkage, in races (DRIVER_PRIOR_N)
+teammate_corr = true              # teammates share part of the noise (TEAMMATE_CORR)
+finish_rho_scale = 1.0            # share of the measured teammate finishing correlation (FINISH_RHO_SCALE)
+reset_weight = 0.25               # with the reset switch: weight of earlier seasons' car data (REG_RESET_WEIGHT)
+
+[data]
+# the L1 input frames this sport's adapter (racinglines/frames/f1.py) builds from Measurements, docs/frames.md.
+# "laps" isn't listed: Measurements keeps measures derived from the laps, not the laps themselves
+frames = ["entrants", "sessions", "classifications", "conditions", "venue_features", "official_results"]
+# frames whose source dates each row as it happens. None for F1: FastF1's archive publishes a session's results and
+# laps only once the session has ended, so every row of a session is available at that session's end
+live = []
+
+[results]
+classified = "status_ok"          # settlement: only an officially classified car (ClassifiedPosition a number) counts as
+                                  # classified for top-n, exact place and the biggest mover (markets/payoffs.py classified)
+
+[sessions]
+# minutes each session runs; its data is usable once it has ended
+minutes = { fp1 = 60, fp2 = 60, fp3 = 60, sprint_qual = 45, qual = 60, sprint = 45, race = 150 }
+practice = ["fp1", "fp2", "fp3", "sprint_qual"]
+
+# The race-like sessions the pricer simulates (models/inputs/laps_pricing.py price_race), each with the session its
+# grid comes from, its points table ([points] below, with <points>_by_year) and its retirement rate as a multiple of
+# the race's (dnf_scale, default 1.0). `race` is the Grand Prix itself and keeps its own code path; every other entry
+# is a stage priced only on weekends that have it (format.sprint), on its own random stream, so no Grand Prix price
+# moves. sprint dnf_scale 0.5: 13 stored sprints vs the same weekends' GPs, DNF share 7.0 % vs 14.4 % (decision log
+# 2026-10-06, provisional, refit after the 2023-25 sprint backfill)
+[sessions.sim]
+race = { grid_from = "qual", points = "race" }
+# 2021 format: Friday's qualifying set the sprint grid (no Sprint Qualifying session), hence grid_from_by_year
+sprint = { grid_from = "sprint_qual", grid_from_by_year = { 2021 = "qual" }, points = "sprint", dnf_scale = 0.5 }
+
+# FastF1 schedule names -> (minutes, short label), for trading stages through a weekend
+[sessions.schedule]
+"Practice 1" = [60, "FP1"]
+"Practice 2" = [60, "FP2"]
+"Practice 3" = [60, "FP3"]
+"Sprint Qualifying" = [45, "SQ"]
+"Sprint Shootout" = [45, "SQ"]
+"Sprint" = [45, "Sprint"]
+"Qualifying" = [60, "Quali"]
+
+# When a race weekend is priced and traded (racinglines/core/stages.py): the stages come from the session
+# schedule above; the race itself is never traded
+[stages]
+pre_label = "pre-weekend"
+pre_minutes = 60                         # "before any running": 1 h before the first session
+lag_minutes = 30                         # a session's data is used 30 min after it ends
+until = "Race"
+
+[stages.closes]                          # a market kind closes when this session starts (a list: either name)
+race_pole = "Qualifying"                 # pole markets close when qualifying starts
+race_sprint_pole = ["Sprint Qualifying", "Sprint Shootout"]   # sprint pole when sprint qualifying starts ...
+race_sprint_win = "Sprint"               # ... and the sprint winner at the sprint's start (Kalshi's sprint markets, U5)
+
+[points]
+race = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1]
+sprint = [8, 7, 6, 5, 4, 3, 2, 1]
+sprint_by_year = { 2021 = [3, 2, 1] }
+
+[tracks]
+# circuits (FastF1 "Location" slug) on public roads: slower, walls, fewer overtakes
+street = ["monte-carlo", "monaco", "baku", "marina-bay", "singapore", "jeddah", "las-vegas", "miami",
+          "miami-gardens", "melbourne", "montreal", "madrid"]
+
+[regulations]
+# seasons that start under new technical regulations (new cars): earlier seasons' car pace
+# carries over less (inputs/laps.py REG_RESET switch)
+resets = [2014, 2017, 2022, 2026]
+
+[markets]
+venues = ["polymarket", "kalshi", "private"]
+standard_kinds = ["race_win", "race_podium", "race_top10"]           # the board's columns
+weekend_kinds = ["race_win", "race_podium", "race_h2h", "race_constructor_top", "race_pole"]   # traded in the sweep
+# The syncs classify F1's markets from the exchanges' titles and match drivers, teams and races with the F1 resolver
+# (racinglines/markets/kalshi/sync.py classify, polymarket/sync.py classify and Resolver); a sport without it files
+# its links through its [identity] resolver and [markets] kinds
+titles = true
+
+[markets.probalytics]
+# Probalytics' tape for a backtest (markets/probalytics.py): the sport's name in its file names,
+# books/<YYYY-MM-DD>_F1_<VENUE>.parquet and fills/F1_<VENUE>_<YYYY-MM>.parquet. book_stale_hours (default 48, the
+# pull's stage-file lookback): how long a snapshot stays the book, as their snapshots are written on change
+tag = "F1"
+
+[markets.kalshi.kinds]
+# Kalshi series ticker -> kind: the exact key a market's kind is read from before its titles (the titles still give the
+# Grand Prix). A series not listed is classified from its titles; KXF1SPRINTFASTLAP stays unmodeled on purpose (no
+# model draws the sprint's fastest lap). Sprint kinds follow RACINGLINES_KALSHI_SPRINTS like the titles do.
+KXF1RACE = "race_win"
+KXF1RACEPODIUM = "race_podium"
+KXF1TOP10 = "race_top10"
+KXF1TOP5 = "race_top5"
+KXF1BIGGESTMOVER = "race_biggest_mover"
+KXF1POLE = "race_pole"
+KXF1POLEPOSITION = "race_pole"
+KXF1TOPCONSTRUCTOR = "race_constructor_top"
+KXF1FASTLAP = "race_fastest_lap"
+KXF1FASTESTLAP = "race_fastest_lap"
+KXF1H2H = "race_h2h"
+KXF1 = "champion"
+KXF1CONSTRUCTORS = "constructors_champion"
+KXF1RACESPRINT = "race_sprint_win"
+KXF1SPRINTPOLE = "race_sprint_pole"
+KXF1SPRINTTOP5 = "race_sprint_top5"
+KXF1SPRINTTOP10 = "race_sprint_top10"
+KXF1SPRINTTOPCONSTRUCTOR = "race_sprint_constructor_top"
+
+[sweep]
+# The season sweep (racinglines/pipelines/season_sweep.py; `racinglines strategy sweep f1`, search jobs of kind "sweep"):
+# the taker modes and maker variants, tuned on one season and held out on the other. `stages` is the default stage
+# mode (a sweep's `stages` setting picks another the schema supports): "sessions" = the session schedule
+# ([sessions.schedule], [stages]) with one diagnostic run per stage (pipelines/weekend_sweep.py); "weekend" needs
+# [replay] stages, which F1 has none of. The kinds are [markets] weekend_kinds; the venues are [markets] venues that
+# are exchanges, plus OG.com where exchanges/og.toml lists the sport.
+stages = "sessions"
+
+[search]
+# The search queue's job kinds for this sport (racinglines/pipelines/search.py, sweeps/*.toml); the first is the
+# default kind of a [[job]] that names none.
+jobs = ["sweep", "checkpoints", "season_strategy"]
+
+[names]                                   # one display name per event key: Markets board, race page, calendar, Live tab
+"2026-16" = "Malaysia GP"                 # FastF1 and the exchanges call it the Bahrain Grand Prix; it ran at Sepang
+"2026-17" = "Singapore GP"                # the venue is Marina Bay; the owner's ledger and the exchanges say Singapore
+
+[live]
+# A race weekend's private book (pipelines/live_f1.py): updated at session ends from the model's stage runs,
+# not from a live feed. docs/f1-live-roadmap.md, scenario B.
+adapter = "racinglines.pipelines.live_f1"
+stream = "the model's stage runs, one per session (FastF1 archive)"
+
+[live.sources]
+historical = { kind = "fastf1" }
+live = { kind = "stage_runs", profile = "C" }     # the demo maker's profile (pipelines/profiles.py)
+
+[live.poll]
+mode = "session_end"
+lag_min = 30                    # a session's data is used 30 min after it ends (weekend_sweep.DATA_LAG)
+step_min = 5                    # the LaunchAgent runs one step every 5 minutes
+late_alert_h = 2                # alert when an update is more than 2 hours late
+stale_h = 30                    # the Live tab stays green between updates while the next one isn't this overdue
+
+[live.markets]
+kinds = ["race_win", "race_podium", "race_pole", "race_h2h", "race_constructor_top"]
+# opt-in props (models/props.py): "race_safety_car", "race_red_flag", "race_rain", "race_fastest_lap";
+# add them here or in a launch spec. [live.props] prior_n (default 16) sets the per-circuit shrinkage
+h2h_from = "last_listed"        # head-to-head pairs: the last race Polymarket listed (or an event key)
+
+[live.quoting]
+# tighter as the model sees more of the weekend; requoted from the latest fair at every update (never frozen),
+# closed at lights out
+half_spread = { "pre-weekend" = 0.03, "after FP1" = 0.025, "after FP2" = 0.025, "after SQ" = 0.025, "after Sprint" = 0.02, "after FP3" = 0.02, "after Quali" = 0.02 }
+max_pos = 2500.0
+skew = 1.0
+
+[live.crowd]
+# the same crowd as downhill, trading in one batch per update: the window since the last update, at a
+# steady per-hour rate, against the quotes posted at its start
+takers = 1000
+budget = [10.0, 200.0]
+bet = [0.2, 0.8]
+min_bet = 2.0
+seed = 20261002
+rate_h = 0.0006                 # per taker, per quoted market, per hour
+late_cap = 100.0                # the pre-race window (after qualifying to lights out): fresh $100 caps ...
+late_pace = 3.0                 # ... at 3x the rate
+
+[live.picks]
+stake = 25.0                    # the demo taker's hype picks, placed at the book's opening
+
+[sources]
+# The compact source note on every page, MCP answer, book render and report that shows this sport's data
+# (racinglines/attribution.py).
+# Results/timing feed(s) as data, taken from racinglines/sources/fastf1/fetch.py docstring ("the official F1 live-timing archive (via FastF1)"); URL docs/f1-reference.md.
+results = [{ name = "F1 live timing via FastF1", url = "https://docs.fastf1.dev/" }]

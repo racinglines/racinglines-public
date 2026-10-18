@@ -1,0 +1,47 @@
+{% extends "base.html" %}{% from "_macros.html" import csrf, table, flash, page_head %}
+{% block title %}{{ mk.title }}{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/book">{{ "Books" if user.role == 'admin' else "My book" }}</a> › <a href="/book/quotes?race_id={{ mk.race_id }}">Quotes</a> › {{ mk.kind }}</p>
+{{ page_head(mk.title, "maker " ~ mk.maker ~ " · " ~ mk.kind ~ " · fair from " ~ mk.fair_source ~ (" run #" ~ mk.model_run_id if mk.model_run_id else "")) }}
+{{ flash(msg) }}
+<div class="kpis hero">
+  <div class="kpi"><div class="l">Status</div><div class="v sm">{{ mk.status }}{% if mk.status == 'settled' %} · {{ "YES" if mk.outcome else "NO" }}{% endif %}</div>{% if mk.status == 'settled' %}<div class="s">{{ mk.settle_note }}</div>{% endif %}</div>
+  <div class="kpi"><div class="l">Fair</div><div class="v">{{ mk.fair_prob|fmt("model_prob") }}</div><div class="s">spread {{ "%.0f"|format(mk.spread*100) }} pts</div></div>
+  <div class="kpi"><div class="l">YES</div><div class="v">{{ mk.yes_price if mk.yes_price is not none else "–" }}</div><div class="s">{% if mk.yes_price %}pays {{ "%.2f"|format(1/mk.yes_price) }}× stake{% else %}not offered{% endif %}</div></div>
+  <div class="kpi"><div class="l">NO</div><div class="v">{{ mk.no_price if mk.no_price is not none else "–" }}</div><div class="s">{% if mk.no_price %}pays {{ "%.2f"|format(1/mk.no_price) }}× stake{% else %}not offered{% endif %}</div></div>
+  <div class="kpi"><div class="l">Exposure</div><div class="v sm">if YES <span class="{{ 'bad' if mk.pnl_if_yes < 0 else '' }}">{{ mk.pnl_if_yes|money(true) }}</span> · if NO <span class="{{ 'bad' if mk.pnl_if_no < 0 else '' }}">{{ mk.pnl_if_no|money(true) }}</span></div><div class="s">EV {{ mk.ev|money }}</div></div>
+</div>
+{% if mk.kind.startswith('rank') %}<p class="note">Settle from the official UCI standings. Pricing uses placeholder points tables.</p>{% endif %}
+<div class="grid">
+<div class="card"><h2>Quote</h2>
+<form method="post" action="/book/markets/{{ mk.id }}/price" class="row">{{ csrf() }}
+  <label><span>Fair %</span><input name="fair_pct" size="5" value="{{ '%.1f'|format(mk.fair_prob*100) }}"></label>
+  <label><span>Spread pts</span><input name="spread_pct" size="4" value="{{ '%.0f'|format(mk.spread*100) }}"></label>
+  <button>Set price (manual)</button></form>
+<form method="post" action="/book/markets/{{ mk.id }}/status" class="row">{{ csrf() }}
+  {% if mk.status == 'open' %}<input type="hidden" name="status" value="closed"><button>Stop taking bets</button>
+  {% elif mk.status == 'closed' %}<input type="hidden" name="status" value="open"><button>Re-open</button>{% endif %}</form>
+</div>
+<div class="card"><h2>{{ "Record an offline bet" if user.role == 'admin' else "Exposure" }}</h2>
+{% if user.role != 'admin' %}
+{% elif mk.status == 'open' %}
+<form method="post" action="/book/markets/{{ mk.id }}/bet" class="row">{{ csrf() }}
+  <label><span>Counterparty</span><input name="counterparty" required size="16"></label>
+  <label><span>They buy</span><select name="side">{% if mk.yes_price %}<option>YES</option>{% endif %}{% if mk.no_price %}<option>NO</option>{% endif %}</select></label>
+  <label><span>Stake $</span><input name="stake" required size="6"></label>
+  <label><span>Price (blank = quote)</span><input name="price" size="5"></label>
+  <label><span>Note</span><input name="note" size="16"></label>
+  <button class="primary">Record</button></form>
+{% else %}<p class="muted">Market is {{ mk.status }}.</p>{% endif %}
+</div>
+</div>
+<div class="card"><h2>Bets</h2>{{ table(bets, ["id", "created_at", "taker", "side", "price", "stake", "payout", "status", "note"]) }}</div>
+{% if mk.status in ('open', 'closed') and user.role == 'admin' %}
+<div class="card"><h2>Settle</h2>
+<form method="post" action="/book/markets/{{ mk.id }}/settle" class="row">{{ csrf() }}
+  <label><span>Outcome</span><select name="outcome"><option value="yes">YES happened</option><option value="no">NO</option><option value="void">Void (return stakes)</option></select></label>
+  <label><span>Source / note</span><input name="note" size="30" placeholder="e.g. official UCI standings after DHI #8"></label>
+  <label class="inline"><input type="checkbox" name="confirm" value="yes" required> confirm</label>
+  <button class="danger">Settle</button></form></div>
+{% endif %}
+{% endblock %}

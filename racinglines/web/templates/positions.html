@@ -1,0 +1,144 @@
+{% extends "base.html" %}{% from "_macros.html" import empty, table, demo_context, chart, kpi, pnl, pnl_cls, page_head, source_note %}
+{% block title %}Positions{% endblock %}
+{% block content %}
+{% include "_lab_nav.html" %}
+{% set priv = venue == 'private' %}
+{% set others = venue_order|reject('in', ['polymarket', 'private'])|list %}{# exchanges besides Polymarket the account has rows on #}
+{% set on = ["Polymarket"] %}{% for k in others %}{% set _ = on.append(venue_names.get(k, k)) %}{% endfor %}{% if venues.private and not hide_private %}{% set _ = on.append("Private book") %}{% endif %}
+{% call page_head("Positions" ~ (" · " ~ cur.name if cur else ""), "Your fantasy-bucks positions on " ~ on|join(", ") ~ ".") %}
+<a href="/strategy">Strategy: what it recommended, and why →</a>{% endcall %}
+<details class="muted"><summary>About these positions</summary>
+<p class="legend">Paper only: nothing was sent to Polymarket. Polymarket history is {{ "the maker's fills" if maker else "your strategy's calls" }}{% if sport_paper %}; {{ 'NASCAR and MotoGP are' if sport_shown('motogp', user) else 'NASCAR is' }} taker replays on the exchanges' recorded prices (a demo: strategies picked in-sample){% else %}{% for k in others %}; {{ venue_names.get(k, k) }} is the same profile replayed on {{ venue_names.get(k, k) }}'s recorded tape{% endfor %}{% endif %}{% if venues.private and not hide_private %}; the private book is {{ "the one you ran" if maker else "the one you bet into" }} live (a demo, in fantasy bucks){% endif %}.</p></details>
+{{ source_note(note_sports, venue_order, model=(profile is not none)) }}
+
+{% if not paper.n and not my_bets and not venues %}{% if profile %}{{ empty("No positions yet.") }}{% else %}<div class="card empty-pick"><h2>No positions yet</h2>
+<p>Nothing trades for this account until you pick a strategy; its paper positions show here from the next pricing update.</p>
+<p><a class="button primary" href="/strategy/pick">Pick a strategy</a></p></div>{% endif %}{% else %}
+{# --- the headline: P&L per venue (each one a filter), then the ledger's state --- #}
+<div class="kpis hero">
+{% if venues|length > 1 %}{% for key in venue_order %}{% set v = venues[key] %}{% set label = venue_names.get(key, key) ~ " P&L" %}{% set sub = "paper history" if key == 'polymarket' else ("live, fantasy bucks" if key == 'private' else "paper, on " ~ venue_names.get(key, key) ~ "'s tape") %}
+  <a class="kpi{{ ' sel' if venue == key }}" href="{{ link(venue=None if venue == key else key, event=None) }}" title="{{ 'Show all venues' if venue == key else 'Show only this venue' }}">
+    <div class="l">{{ label }}</div><div class="v {{ pnl_cls(v.pnl) }}">{{ v.pnl|money(true) }}</div>
+    <div class="s">{{ sub }} · {% if v.first %}{{ v.first|fmt }}{% if v.last != v.first %} – {{ v.last|fmt }}{% endif %}{% endif %} · {{ v.n }} positions</div></a>
+{% endfor %}
+  <a class="kpi{{ ' sel' if not venue }}" href="{{ link(venue=None, event=None) }}" title="Show all venues">
+    <div class="l">Total P&amp;L</div><div class="v {{ pnl_cls(vtotal) }}">{{ vtotal|money(true) }}</div>
+    <div class="s">{{ "both" if venues|length == 2 else "all" }} venues · {{ venues.values()|sum(attribute='n') }} positions · click a venue to show only it</div></a>
+{% else %}{{ kpi("Realised P&L", paper.settled_pnl, "settled positions", "money") }}{% endif %}
+  <div class="kpi"><div class="l"><span tabindex="0" data-tooltip="positions still held, not yet settled">Open now</span>{% if venue %} · {{ "private book" if priv else venue_names.get(venue, venue) }}{% endif %}</div><div class="v">{{ paper.open }}</div><div class="s">marked to the market: {{ pnl(paper.open_value) }}</div></div>
+  <div class="kpi"><div class="l">Closed and settled</div><div class="v">{{ paper.n - paper.open }}</div><div class="s">{{ paper.won }} of {{ paper.held }} <span tabindex="0" data-tooltip="kept until the race result">held to the result</span> made money{% if venues|length > 1 %} · realised {{ pnl(paper.settled_pnl) }}{% endif %}</div></div>
+</div>
+
+{# --- one view at a time --- #}
+{% set vplots = [] %}{% for k, a in vaccts.items() if a and a.chart and a.record and venue in ('', k) %}{% set _ = vplots.append(k) %}{% endfor %}
+{% set has_poly = acct and acct.chart and venue in ('', 'polymarket') %}{% set has_book = book and book.chart and venue in ('', 'private') and not hide_private %}
+{% set n_plots = (1 if has_poly else 0) + (1 if has_book else 0) + vplots|length %}
+{% set show_coming = coming and not priv %}
+<nav class="ptabs" data-tabs="positions" role="tablist">
+  <button type="button" role="tab" data-tab="overview">Overview</button>
+  {% if show_coming %}<button type="button" role="tab" data-tab="coming">Coming up{% if open_pos %}<span class="n">{{ open_pos|length }} open</span>{% endif %}</button>{% endif %}
+  <button type="button" role="tab" data-tab="ledger">{{ "Positions this weekend" if cur else "Positions" }}<span class="n">{{ shown|length }}</span></button>
+  {% if my_bets %}<button type="button" role="tab" data-tab="bets">In-app bets<span class="n">{{ my_bets|length }}</span></button>{% endif %}
+</nav>
+
+<section data-panel="overview">
+{% if n_plots %}<div class="card"><div class="section-head"><h2>P&amp;L history</h2>
+{% if n_plots > 1 %}<div class="tabs" role="group" aria-label="Which P&L to plot">
+  {% if has_poly %}<button type="button" data-toggle="plot" data-value="polymarket" aria-pressed="{{ 'true' if plot == 'polymarket' else 'false' }}">Polymarket</button>{% endif %}
+  {% for k in vplots %}<button type="button" data-toggle="plot" data-value="{{ k }}" aria-pressed="{{ 'true' if plot == k else 'false' }}">{{ venue_names.get(k, k) }}</button>{% endfor %}
+  {% if has_book %}<button type="button" data-toggle="plot" data-value="private" aria-pressed="{{ 'true' if plot == 'private' else 'false' }}">Private book</button>{% endif %}
+</div>{% endif %}</div>
+{% if has_poly %}<div class="plot" data-plot="polymarket"{% if n_plots > 1 and plot != 'polymarket' %} hidden{% endif %}>{{ chart(acct.chart) }}
+<p class="legend">Polymarket, paper: cumulative P&amp;L, <b>{{ acct.kpis.total|money(true) }}</b> over {{ acct.kpis.weekends }} weekends.
+Worst drawdown <b class="bad">{{ acct.kpis.max_dd|money(true) }}</b> from a peak;
+Sharpe ratio <b>{{ "%.2f"|format(acct.kpis.sharpe) if acct.kpis.sharpe is not none else "–" }}</b> (per season, over {{ acct.kpis.weekends }} weekends: mean ÷ s.d. of weekend P&amp;L × √24).
+Weekend by weekend, and the strategy behind it: <a href="/strategy">Strategy</a>.</p></div>{% endif %}
+{%- for k in vplots %}{% set a = vaccts[k] %}{% set nm = venue_names.get(k, k) %}<div class="plot" data-plot="{{ k }}"{% if n_plots > 1 and plot != k %} hidden{% endif %}>{{ chart(a.chart) }}
+<p class="legend">{{ nm }}, paper: the same profile replayed on {{ nm }}'s recorded trades, with {{ nm }}'s fees. Cumulative P&amp;L, <b>{{ a.kpis.total|money(true) }}</b> over {{ a.kpis.weekends }} weekends.
+Worst drawdown <b class="bad">{{ a.kpis.max_dd|money(true) }}</b> from a peak;
+Sharpe ratio <b>{{ "%.2f"|format(a.kpis.sharpe) if a.kpis.sharpe is not none else "–" }}</b>.
+Weekend by weekend: <a href="/strategy?venue={{ k }}">Strategy, on {{ nm }}</a>.</p></div>{% endfor %}
+{% if has_book %}<div class="plot" data-plot="private"{% if n_plots > 1 and plot != 'private' %} hidden{% endif %}>{{ chart(book.chart) }}
+<p class="legend">Private book: its P&amp;L at every one of the {{ book.polls }} polls of the live event (UTC), marked to fair, settled at the result.
+Worst drawdown <b class="bad">{{ book.max_dd|money(true) }}</b> from a peak, through the day.</p></div>{% endif %}
+</div>{% endif %}
+{% if show_backtests %}<details class="card quiet" id="backtests" hx-get="/positions/backtests" hx-trigger="toggle once"
+  hx-target="#positions-backtests-result" hx-swap="innerHTML">
+  <summary><h3>Explore saved strategy P&amp;L</h3><span class="sum">sport · season · venue · setup · strategy; separate from your account</span></summary>
+  <div id="positions-backtests-result"><p class="legend">Open to load saved Edge Finder sweeps.</p></div>
+</details>{% endif %}
+
+<div class="card"><h2>By market type</h2><div class="scroll"><table><thead><tr><th class="l">Market type</th><th>Positions</th><th>Open</th><th>Held to the result, made money</th><th>P&amp;L</th></tr></thead><tbody>
+{% for k in by_kind %}<tr><td class="l">{{ k.kind|kind }}</td><td>{{ k.n }}</td><td>{{ k.open }}</td><td>{{ k.won }}/{{ k.settled }}</td>
+  <td>{{ pnl(k.pnl) }}</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% if maker and not hide_private %}<p class="legend">In-app markets you quote are on <a href="/book">My book</a>.</p>{% endif %}
+</section>
+
+{# --- what the strategy would do next --- #}
+{% if show_coming %}<section data-panel="coming" hidden>
+<div class="card"><div class="section-head"><h2>Coming up</h2>{% if open_pos %}<span class="muted"><b>{{ open_pos|length }}</b> position{{ "s" if open_pos|length != 1 }} still open (under Positions)</span>{% endif %}</div>
+{% for cm in ([coming, kcoming] if kcoming else [coming]) %}{% set ex = "Kalshi" if cm.exchange == 'kalshi' else "Polymarket" %}
+{%- if kcoming %}<h2 class="mt">{{ ex }}</h2>{% endif -%}
+{% for rc in cm.races %}
+<h3>{{ rc.name }}{% if rc.location %} · {{ rc.location }}{% endif %} <span class="muted small">· race {{ rc.start|fmt }}</span></h3>
+{% set calls = [] %}{% for e in rc.events %}{% for r in e.rows if r.call.action %}{% set _ = calls.append(r) %}{% endfor %}{% endfor %}
+{% if not rc.events %}{{ empty(ex ~ " hasn't listed markets for this race yet. " ~ ("Quotes" if maker else "Calls") ~ " appear here as soon as it does.") }}
+{% elif not calls %}<p class="muted">{{ rc.events|map(attribute='rows')|map('length')|sum }} markets listed; {{ "there's" if profile.basic else profile.name.split(' ')[0] }} {{ "wouldn't quote any" if maker else ("no pick on any" if profile.basic else "has no call on any") }} right now. {{ "Quotes" if maker else "Calls" }} update after every session.</p>
+{% else %}<div class="scroll"><table><thead><tr><th class="l">Market</th><th>Price</th>{% if maker %}<th>Bid</th><th>Ask</th><th>Size</th>{% else %}<th class="l">Call</th><th class="l">Heat</th>{% endif %}</tr></thead><tbody>
+{% for r in calls %}<tr><td class="l">{{ r.subject }} <span class="muted">{{ r.prediction|kind }}</span></td><td>{{ "%.3f"|format(r.mid) if r.mid is not none }}</td>
+  {% if maker %}<td>{{ "%.2f"|format(r.call.bid) if r.call.bid is not none else "–" }}</td><td>{{ "%.2f"|format(r.call.ask) if r.call.ask is not none else "–" }}</td><td>{{ "%.0f"|format(r.call.size) }}</td>
+  {% else %}<td class="l"><b>BUY {{ r.call.side }}</b> {{ "%.0f"|format(r.call.shares) }} sh @ ≤{{ "%.2f"|format(r.call.limit) }} <span class="muted">({{ r.call.cost|money(false, false) }})</span></td><td class="l">{% if r.heat_label %}<span class="heat h{{ r.call.heat }}">{{ r.heat_label }}</span>{% endif %}</td>{% endif %}</tr>{% endfor %}
+</tbody></table></div>{% endif %}
+{% endfor %}{% endfor %}
+<p class="legend">{% if maker %}Where {{ profile.name.split(' ')[0] }} would quote each listed market right now (it re-quotes every 5 minutes through the weekend){% elif profile.basic %}Your current picks{% else %}{{ profile.name.split(' ')[0] }}'s current calls{% endif %}. Every market, with or without a {{ "quote" if maker else "call" }}: <a href="{{ '/markets/polymarket' if maker else '/markets' }}">{{ "Polymarket" if maker else "Markets" }}</a>{% if kcoming and maker %} · <a href="/markets/kalshi">Kalshi</a>{% endif %}.</p>
+</div>
+</section>{% endif %}
+
+{# --- the ledger --- #}
+<section data-panel="ledger" hidden>
+<div class="card"><div class="section-head"><h2>{{ "Positions" if not cur else "Positions this weekend" }}</h2><span class="spacer"></span>
+<form method="get" class="toolbar mb0"><label><span>Venue</span><select name="venue" data-autosubmit>
+  <option value="">all venues</option><option value="polymarket" {{ 'selected' if venue == 'polymarket' }}>Polymarket (paper)</option>{% for k in others %}<option value="{{ k }}" {{ 'selected' if venue == k }}>{{ venue_names.get(k, k) }} (paper)</option>{% endfor %}{% if not hide_private %}<option value="private" {{ 'selected' if venue == 'private' }}>Private book</option>{% endif %}
+</select></label>
+<label><span>Sport</span><select name="sport" data-autosubmit>
+  <option value="">all sports</option>
+  {% for code in sport_options %}<option value="{{ code }}" {{ 'selected' if sport == code }}>{{ sport_names.get(code, code) }}</option>{% endfor %}
+</select></label>
+<label><span>Weekend</span><select name="event" data-autosubmit>
+  <option value="">all weekends</option>
+  {% for w in weekends %}<option value="{{ w.event_key }}" {{ 'selected' if w.event_key == event }}>{{ w.name }} {{ w.event_key[:4] }} · {{ w.n }} · {{ w.pnl|money(true) }}</option>{% endfor %}
+</select></label>
+<label><span>Sort</span><select name="sort" data-autosubmit>
+  <option value="">by weekend</option><option value="pnl" {{ 'selected' if sort == 'pnl' }}>P&amp;L, best first</option><option value="-pnl" {{ 'selected' if sort == '-pnl' }}>P&amp;L, worst first</option>
+</select></label></form></div>
+<div class="scroll" data-rows="25" data-filter="Filter by market or weekend"><table><thead><tr>{% if not cur %}<th class="l">Weekend</th>{% endif %}<th class="l">Market</th><th class="l">Position</th><th>{{ "Fills" if maker else "Trades" }}</th><th>Cash in / out</th><th>Price now / result</th><th><a href="{{ link(sort='-pnl' if sort == 'pnl' else 'pnl') }}" title="Sort by P&amp;L">P&amp;L {{ "↓" if sort == 'pnl' else ("↑" if sort == '-pnl' else "↕") }}</a></th><th class="l"></th></tr></thead><tbody>
+{% for p in shown %}<tr>{% if not cur %}<td class="l"><a href="{{ link(event=p.event_key) }}">{{ p.event_name or p.event_key }}</a> <span class="muted">{{ p.start_date|fmt if p.start_date }}</span></td>{% endif %}
+  <td class="l">{{ p.subject }} <span class="muted">{{ p.kind|kind }}</span>{% if p.venue == 'private' %} <span class="pill no">private book</span>{% elif p.venue != 'polymarket' and not venue %} <span class="pill no">{{ venue_names.get(p.venue, p.venue) }}</span>{% endif %}</td>
+  <td class="l">{% if p.side %}{{ "%.0f"|format(p.shares) }} {{ p.side }}{% else %}<span class="muted">closed before the race</span>{% endif %}</td>
+  <td>{{ p.trades }}</td><td>{{ p.cash|money(true) }}</td>
+  <td>{% if p.outcome is not none %}{{ "YES" if p.outcome else "NO" }}{% elif p.mark is not none %}{{ "%.2f"|format(p.mark) }}{% endif %}</td>
+  <td>{{ pnl(p.pnl) }}</td>
+  <td class="l">{% if p.state == 'open' %}<span class="pill yes">open</span>{% elif p.state == 'closed' %}<span class="muted">closed</span>{% endif %}{% if p.demo_sport %} <span class="pill no">demo replay, in-sample</span>{% elif p.backfill %} <span class="pill no">backtest replay</span>{% endif %}</td></tr>
+{% else %}<tr><td colspan="8">{{ empty("No positions yet.") }}</td></tr>{% endfor %}
+</tbody></table></div></div>
+
+{% if cur %}<details class="card" data-remember="positions:trades"><summary><h2>{{ "Paper fills" if maker else "Trades taken" }} this weekend</h2><span class="sum">{{ trades|length }} · the executions behind these positions, in order</span></summary>
+<p class="legend">{{ ("Each is a real " ~ venue_names.get(venue, venue) ~ " taker trade that crossed the maker's quote." if venue and not priv else ("Each is a real taker trade (Polymarket's, or another exchange's where marked) that crossed the maker's quote." if others and not venue else "Each is a real Polymarket taker trade that crossed the maker's quote.")) if maker else "Each is a call the account took, at the most it would pay." }}</p>
+<div class="scroll" data-rows="25" data-filter="Filter by market or stage"><table><thead><tr><th class="l">When (UTC)</th><th class="l">Stage</th><th class="l">Market</th><th class="l">Trade</th><th>Shares</th><th>Price</th><th>Cash</th></tr></thead><tbody>
+{% for t in trades %}{% set sg = (-1 if (t.action == 'buy' or (t.action == 'fill' and t.side == 'YES')) else 1) %}<tr>
+  <td class="l">{{ t.signal_ts|fmt }}</td><td class="l">{{ t.stage }}</td><td class="l">{{ t.subject }} <span class="muted">{{ t.kind|kind }}</span>{% set tvn = (t.detail or {}).get('venue') %}{% if not venue and tvn and tvn != 'polymarket' %} <span class="pill no">{{ venue_names.get(tvn, tvn) }}</span>{% endif %}</td>
+  <td class="l">{% if t.action == 'fill' %}{{ "bought" if t.side == 'YES' else "sold" }} YES{% else %}{{ t.action }} {{ t.side }}{% endif %}</td>
+  <td>{{ "%.0f"|format(t.shares) }}</td><td>{{ "%.2f"|format(t.limit_price) }}</td><td>{{ (sg * t.shares * t.limit_price)|money(true) }}</td></tr>
+{% else %}<tr><td colspan="7">{{ empty("No trades yet.") }}</td></tr>{% endfor %}
+</tbody></table></div></details>{% endif %}
+{% if shown|selectattr('backfill')|list %}{% call demo_context() %}<span class="pill no">backtest replay</span> positions come from this demo account's replayed weekends; live paper positions start with the next race weekend.{% endcall %}{% endif %}
+</section>
+
+{% if my_bets %}<section data-panel="bets" hidden>
+<div class="card"><h2>In-app bets</h2>
+{% if summary %}<p><b>{{ summary.bets }}</b> bets ({{ summary.open }} open) · staked <b>{{ summary.staked|money }}</b> · settled P&amp;L {{ pnl(summary.pnl, True) }}</p>{% endif %}
+{{ table(my_bets, ["id", "created_at", "title", "maker", "side", "price", "stake", "payout", "status", "pnl"], cap=25, filter="Filter by market") }}</div>
+</section>{% endif %}
+{% endif %}
+{% endblock %}

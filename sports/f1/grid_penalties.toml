@@ -1,0 +1,24 @@
+# Confirmed grid penalties, per event and session, applied to the simulated or known grid before the race is simulated
+# (racinglines/models/inputs/grid.py). kind: "back" (back of the grid), "pit_lane" (priced as back of the grid), or
+# "places" with `places = N`. Only penalties confirmed by the team or the FIA go here, with a source.
+#
+#   event      the event key YYYY-RR (season and championship round, as `f1 diagnostic` takes it)
+#   driver     the driver's surname or full name as the results show it (athletes.display_name, e.g. "George Russell"):
+#              matched exactly after lowercasing, dropping accents and punctuation ("russell", "george russell",
+#              "hulkenberg"), never fuzzily. A key matching no entrant, or a surname two entrants share, is an error
+#   session    the race-like session it applies to: "race" (the Grand Prix) or "sprint" ([sessions.sim] in sports/f1.toml)
+#   announced  optional, a UTC date or datetime: the penalty is applied only to prices with a cutoff at or after it
+#              (the as-of rule for backtests and diagnostics); without it, every cutoff sees it
+#   source     a link to the team's or the FIA's confirmation (or a report quoting it); note: free text
+#
+# Back-of-grid and pit-lane drivers start behind everyone else in their qualifying order; a "places" driver drops N
+# places with the drivers behind him closing up, never behind the back-of-grid group.
+
+[[penalty]]
+event = "2026-17"
+driver = "russell"
+session = "race"
+kind = "back"
+announced = 2026-10-06
+source = "https://www.skysports.com/f1/news/13595451/george-russell-mercedes-driver-set-to-start-singapore-gp-from-back-of-grid-due-to-penalty-caused-by-bahrain-gp-engine-failure"
+note = "New power unit after the Bahrain retirement; back of the grid for the Grand Prix, sprint unaffected (Mercedes, 2026-10-06)"

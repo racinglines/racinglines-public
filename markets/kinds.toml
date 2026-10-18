@@ -1,0 +1,567 @@
+# Every market kind, one [[kinds]] table per kind: the registry racinglines/markets/kinds.py KINDS, in this file's
+# order (db/reads.PREDICTION_KINDS is derived from it). A new market type is a new table here; code changes only for a
+# new predicate, aggregate or comparison (owner, 2026-10-06: "as few conditional code switches in the model, and more
+# generalized support functions who's inputs are set by the schemas").
+#
+# Common fields
+#   code       the prediction kind (market_links.prediction, at most 30 characters)
+#   label      the display name
+#   default    false: priced only when named (left out of kinds.summary(), the prediction records and the walk-forward
+#              default set, so adding a kind changes no existing output and no golden test). Default true for the
+#              legacy payoffs; a declarative kind must say false
+#   session    an earlier round raced as its own classification (F1: "sprint", "qual"): priced on sims.at(session),
+#              settled on the result frame's <session>_ columns
+#
+# Two kinds of payoff:
+#
+# 1. payoff = "<name>": a legacy payoff, one function each in racinglines/markets/kinds.py, inputs from the row:
+#      top_n        n            rank <= n and finished; settles on status OK and position <= n (absent: NO)
+#      stage_top_n  n, stage     an earlier round's order (sims.stage_rank[stage]) <= n; settles on <stage>_position
+#                                (qual_position for "qual")
+#      reached      stage        the entrant reached the round (sims.reached[stage]); settles on reached_<stage>
+#      h2h                       P(a classified ahead of b); settles on positions (params.opponent_id)
+#      group_top                 the team scoring the most points (ties split); settles on summed points (params.team)
+#      indicator                 a yes/no the model draws itself (sims.indicators[code]); settles on the results' <code>
+#                                column when the frame has one (GlobalModel's best lap), else undecided
+#      mover        stage        priced: the biggest gain from the <stage> order to the finish; settled from the race
+#                                round's stored starting grid (results.extra.grid; payoffs.biggest_mover), else undecided
+#      standings    n, exact     season-long, priced by kinds.season_fair from a season simulation (outcomes.SeasonSims,
+#                   subject      drivers or, with subject = "team", constructors): P(standings position <= n), or == n
+#                                with exact = true. Without n: its own rule in season_fair (season_wins_ge,
+#                                standings_h2h). Settled by the venue's resolution, never from one race's results
+#    Their fair values feed the golden tests and the live book: a row keeps its payoff until a promotion
+#    (docs/f1-roadmap.md) moves it onto a spec. Every legacy row comes before the first declarative one.
+#
+# 2. payoff = { ... }: a declarative spec, priced and settled by the two generic functions of
+#    racinglines/markets/payoffs.py (payoffs.fair, payoffs.settle):
+#
+#    subject    driver | team | field           who a selection names (field: the whole race, one yes/no with a line)
+#    predicate  what holds for one car, on the simulations / on the results frame:
+#               classified        finished / status OK
+#               retired           not finished / status DNF or DSQ (a DNS is void)
+#               top        n      rank <= n and finished / OK and position <= n
+#               position   n      rank == n and finished / OK and position == n (an exact finishing place)
+#               stage_top  n, stage   sims.stage_rank[stage] <= n / <stage>_position <= n (qual_position for "qual");
+#                                 a car with no position is NO once anyone has one, undecided while nobody has
+#               indicator  of     sims.indicators[of] (a yes/no the model draws, e.g. race_fastest_lap) / the results'
+#                                 <of> column when the frame has one, else undecided
+#               points            the points the car scores (sims.points) / the results' points (a number, not a yes/no)
+#               last_classified   the worst-ranked classified car (ties all) / OK and position == the worst OK position
+#               nth_retired n     1 / n_dnf for every retiring car in a simulation with at least n retirements (the
+#                                 uniform timing assumption) / competition rank of laps_completed among the DNFs == n
+#    aggregate  any | all | sum | count | total     how a team's or the field's cars combine (omitted for driver);
+#               total sums a number (points), the others count yes/no values
+#    compare    over                         P(aggregate > line); the line is given when pricing or settling
+#               rank    place                the team's place among all teams by aggregate == place
+#               ahead                        the team ahead of params.opponent (another team) by aggregate
+#               Teams in rank and ahead are ordered by the aggregate, then by their best-placed car (the constructors'
+#               countback: no two teams tie unless neither has a car ranked); a tie that remains splits the place in
+#               pricing and leaves the market undecided in settlement
+#    [kinds.settle]   optional: overrides of the payoff spec for settlement, plus
+#    absent     no | void                    a driver missing from the results settles NO or void (default void)
+# wx    optional: how a probability of rain moves the price (racinglines/markets/kinds.py Kind.wx). "dnf": priced from
+#       drivers' dnf_prob scaled by props.wx_scale (the circuit's wet-or-dry retirement rate,
+#       models/props.py) when a probability of rain is given; set on every kind whose predicate is
+#       classified, retired, last_classified or nth_retired. Omitted: weather doesn't move it.
+#
+# Settlement details for the declarative predicates: classified = status OK; retired = status DNF or DSQ (a DNS is
+# void); last_classified is void when nobody is classified; nth_retired counts status DNF only (a DSQ is decided after
+# the flag), is void without a laps_completed for every DNF, and is NO for everyone when nobody retired.
+
+# ---- legacy payoffs ------------------------------------------------------------------------------------------------
+
+[[kinds]]
+code = "race_win"
+label = "Win"
+payoff = "top_n"
+n = 1
+
+[[kinds]]
+code = "race_podium"
+label = "Podium"
+payoff = "top_n"
+n = 3
+
+[[kinds]]
+code = "race_top10"
+label = "Top 10"
+payoff = "top_n"
+n = 10
+
+[[kinds]]
+code = "race_make_final"
+label = "Makes the Final"
+payoff = "reached"
+stage = "final"
+
+[[kinds]]
+code = "champion"
+label = "Champion"
+payoff = "standings"
+n = 1
+
+[[kinds]]
+code = "standings_top3"
+label = "Top 3 in the standings"
+payoff = "standings"
+n = 3
+
+[[kinds]]
+code = "race_h2h"
+label = "Head-to-head"
+payoff = "h2h"
+
+[[kinds]]
+code = "race_pole"
+label = "Pole position"
+payoff = "stage_top_n"
+n = 1
+stage = "qual"
+
+[[kinds]]
+code = "race_constructor_top"
+label = "Top constructor"
+payoff = "group_top"
+
+[[kinds]]
+code = "constructors_champion"
+label = "Constructors' champion"
+payoff = "standings"
+subject = "team"
+n = 1
+
+[[kinds]]
+code = "season_wins_ge"
+label = "Season wins at least"
+payoff = "standings"
+
+[[kinds]]
+code = "standings_h2h"
+label = "Standings head-to-head"
+payoff = "standings"
+
+# F1 sprint weekends (Kalshi's KXF1SPRINTPOLE / KXF1RACESPRINT, docs/todo.md U5): the sprint qualifying order and the
+# sprint classification are earlier rounds of the weekend, priced like pole from sims.stage_rank["sprint_qual"] /
+# ["sprint"] when a model simulates them
+
+[[kinds]]
+code = "race_sprint_pole"
+label = "Sprint pole"
+payoff = "stage_top_n"
+n = 1
+stage = "sprint_qual"
+
+[[kinds]]
+code = "race_sprint_win"
+label = "Sprint winner"
+payoff = "stage_top_n"
+n = 1
+stage = "sprint"
+
+# A yes/no the model draws itself in each simulation (sims.indicators[code]). F1's fastest lap is drawn by position_sim
+# behind its `fastlap` variant (model.FASTEST_LAP, off by default) and stored as race_predictions.extra.fl_prob; the
+# classification doesn't record it, so it can't be settled from F1's results. NASCAR's is drawn by the GlobalModel from
+# each race's best-lap order ([model] best_lap in sports/nascar.toml) and settles on the race's laps when all are stored
+
+[[kinds]]
+code = "race_fastest_lap"
+label = "Fastest lap"
+payoff = "indicator"
+
+# Kalshi's KXF1TOP5 and KXF1BIGGESTMOVER: F1 position_sim stores them as extra.top5_prob / extra.mover_prob. Biggest
+# mover: the classified driver with the largest gain from the starting grid to the finish, if anyone gained; every
+# driver tied on that gain counts as YES (docs/f1-roadmap.md decision log, 2026-10-04)
+
+[[kinds]]
+code = "race_top5"
+label = "Top 5"
+payoff = "top_n"
+n = 5
+default = false
+
+[[kinds]]
+code = "race_biggest_mover"
+label = "Biggest mover"
+payoff = "mover"
+stage = "qual"
+default = false
+
+# The sprint as a race of its own (models/inputs/laps_pricing.price_stages, docs/todo.md U13): the race payoffs on the
+# sprint's classification and points. Kept out of every default set and live book (owner, DEC-12) until their
+# settlement is proven
+
+[[kinds]]
+code = "race_sprint_podium"
+label = "Sprint podium"
+payoff = "top_n"
+n = 3
+session = "sprint"
+default = false
+
+[[kinds]]
+code = "race_sprint_top8"
+label = "Sprint top 8"
+payoff = "top_n"
+n = 8
+session = "sprint"
+default = false
+
+[[kinds]]
+code = "race_sprint_h2h"
+label = "Sprint head-to-head"
+payoff = "h2h"
+session = "sprint"
+default = false
+
+[[kinds]]
+code = "race_sprint_constructor_top"
+label = "Sprint top constructor"
+payoff = "group_top"
+session = "sprint"
+default = false
+
+# Qualifying as a classification of its own (owner, 2026-10-07: every session's markets, combo legs included): priced
+# from sims.stage_rank["qual"], the simulated qualifying order before qualifying, the real one after; settled from the
+# results' qual_position (the head-to-head needs qual_status too, which the result frame doesn't carry yet: undecidable
+# until then). Kept out of every default set and live book
+
+[[kinds]]
+code = "race_qual_top3"
+label = "Qualifying top 3"
+payoff = "stage_top_n"
+n = 3
+stage = "qual"
+default = false
+
+[[kinds]]
+code = "race_qual_top10"
+label = "Qualifying top 10 (reaches Q3)"
+payoff = "stage_top_n"
+n = 10
+stage = "qual"
+default = false
+
+[[kinds]]
+code = "race_qual_h2h"
+label = "Qualifying head-to-head"
+payoff = "h2h"
+session = "qual"
+default = false
+
+# Championship places 2nd to 5th (Polymarket's "F1 Drivers Champion: 2nd Place", the constructors' the same): an exact
+# standings position from a season simulation (drivers: outcomes.SeasonSims of the drivers; constructors: one whose
+# entrants are the teams). Settled by the venue's resolution
+
+[[kinds]]
+code = "standings_p2"
+label = "2nd in the standings"
+payoff = "standings"
+n = 2
+exact = true
+default = false
+
+[[kinds]]
+code = "standings_p3"
+label = "3rd in the standings"
+payoff = "standings"
+n = 3
+exact = true
+default = false
+
+[[kinds]]
+code = "standings_p4"
+label = "4th in the standings"
+payoff = "standings"
+n = 4
+exact = true
+default = false
+
+[[kinds]]
+code = "standings_p5"
+label = "5th in the standings"
+payoff = "standings"
+n = 5
+exact = true
+default = false
+
+[[kinds]]
+code = "constructors_p2"
+label = "2nd in the constructors' standings"
+payoff = "standings"
+subject = "team"
+n = 2
+exact = true
+default = false
+
+[[kinds]]
+code = "constructors_p3"
+label = "3rd in the constructors' standings"
+payoff = "standings"
+subject = "team"
+n = 3
+exact = true
+default = false
+
+[[kinds]]
+code = "constructors_p4"
+label = "4th in the constructors' standings"
+payoff = "standings"
+subject = "team"
+n = 4
+exact = true
+default = false
+
+[[kinds]]
+code = "constructors_p5"
+label = "5th in the constructors' standings"
+payoff = "standings"
+subject = "team"
+n = 5
+exact = true
+default = false
+
+# ---- declarative kinds -------------------------------------------------------------------------------------------
+
+# ---- classification (docs/sportsbook/, sportsbook A's "To Be Classified?", "Both Cars Classified?", "Number Of
+# Classified Drivers", "Classified As Last Finisher", "Race Winning Constructor"). The 90%-distance rule is not modelled.
+
+[[kinds]]
+code = "race_classified"
+label = "Classified"
+default = false
+wx = "dnf"
+payoff = { subject = "driver", predicate = "classified" }
+settle = { absent = "no" }
+
+[[kinds]]
+code = "race_last_classified"
+label = "Last classified finisher"
+default = false
+wx = "dnf"
+payoff = { subject = "driver", predicate = "last_classified" }
+settle = { absent = "no" }
+
+[[kinds]]
+code = "race_team_both_classified"
+label = "Both cars classified"
+default = false
+wx = "dnf"
+payoff = { subject = "team", predicate = "classified", aggregate = "all" }
+
+[[kinds]]
+code = "race_n_classified"
+label = "Classified drivers over the line"
+default = false
+wx = "dnf"
+payoff = { subject = "field", predicate = "classified", aggregate = "count", compare = "over" }
+
+[[kinds]]
+code = "race_constructor_win"
+label = "Winning constructor"
+default = false
+payoff = { subject = "team", predicate = "top", n = 1, aggregate = "any" }
+
+# ---- retirements (docs/sportsbook/vocabulary.md; decision log 2026-10-06, provisional). race_retire is "To Be
+# Classified? No" / "Will X retire". The book's "no retirement" selection is the NO side of race_n_retirements at 0.5.
+
+[[kinds]]
+code = "race_retire"
+label = "Retires (DNF)"
+default = false
+wx = "dnf"
+payoff = { subject = "driver", predicate = "retired" }
+
+[[kinds]]
+code = "race_n_retirements"
+label = "Retirements over the line"
+default = false
+wx = "dnf"
+payoff = { subject = "field", predicate = "retired", aggregate = "count", compare = "over" }
+
+[[kinds]]
+code = "race_first_retirement"
+label = "First retirement"
+default = false
+wx = "dnf"
+payoff = { subject = "driver", predicate = "nth_retired", n = 1 }
+
+[[kinds]]
+code = "race_first_retirement_team"
+label = "First constructor to retire"
+default = false
+wx = "dnf"
+payoff = { subject = "team", predicate = "nth_retired", n = 1, aggregate = "sum" }
+
+# Owner (2026-10-06): "if we have DID RETIRE add DID RETIRE 1st and so on", and team versions of the per-driver
+# classification kinds.
+
+[[kinds]]
+code = "race_second_retirement"
+label = "Second retirement"
+default = false
+wx = "dnf"
+payoff = { subject = "driver", predicate = "nth_retired", n = 2 }
+
+[[kinds]]
+code = "race_third_retirement"
+label = "Third retirement"
+default = false
+wx = "dnf"
+payoff = { subject = "driver", predicate = "nth_retired", n = 3 }
+
+[[kinds]]
+code = "race_team_any_classified"
+label = "At least one car classified"
+default = false
+wx = "dnf"
+payoff = { subject = "team", predicate = "classified", aggregate = "any" }
+
+[[kinds]]
+code = "race_team_both_points"
+label = "Both cars in the points"
+default = false
+payoff = { subject = "team", predicate = "top", n = 10, aggregate = "all" }
+
+# ---- every supportable kind the exchanges list (docs/parity plan, "Every session, every supportable kind"; owner,
+# 2026-10-07: "close this gap"). Priced from what the race simulations already draw; none in a default set or live book.
+
+# An exact finishing place (Polymarket's "<GP>: 2nd Place" to "5th Place"; 1st is race_win)
+
+[[kinds]]
+code = "race_p2"
+label = "Finishes 2nd"
+default = false
+payoff = { subject = "driver", predicate = "position", n = 2 }
+settle = { absent = "no" }
+
+[[kinds]]
+code = "race_p3"
+label = "Finishes 3rd"
+default = false
+payoff = { subject = "driver", predicate = "position", n = 3 }
+settle = { absent = "no" }
+
+[[kinds]]
+code = "race_p4"
+label = "Finishes 4th"
+default = false
+payoff = { subject = "driver", predicate = "position", n = 4 }
+settle = { absent = "no" }
+
+[[kinds]]
+code = "race_p5"
+label = "Finishes 5th"
+default = false
+payoff = { subject = "driver", predicate = "position", n = 5 }
+settle = { absent = "no" }
+
+# NASCAR's top 20 (Kalshi KXNASCARTOP20)
+
+[[kinds]]
+code = "race_top20"
+label = "Top 20"
+default = false
+payoff = { subject = "driver", predicate = "top", n = 20 }
+settle = { absent = "no" }
+
+# The sprint's top 5 and top 10 (Kalshi KXF1SPRINTTOP5 / KXF1SPRINTTOP10), on the sprint's own classification
+
+[[kinds]]
+code = "race_sprint_top5"
+label = "Sprint top 5"
+default = false
+session = "sprint"
+payoff = { subject = "driver", predicate = "top", n = 5 }
+settle = { absent = "no" }
+
+[[kinds]]
+code = "race_sprint_top10"
+label = "Sprint top 10"
+default = false
+session = "sprint"
+payoff = { subject = "driver", predicate = "top", n = 10 }
+settle = { absent = "no" }
+
+# Team aggregates over the pole and the fastest lap (Polymarket's "<GP>: Constructor Pole Position" / "Constructor
+# Fastest Lap"). The fastest lap is drawn only by position_sim's `fastlap` variant and is not in the results: the
+# constructor fastest lap prices from such a run and settles by the venue, as race_fastest_lap
+
+[[kinds]]
+code = "race_constructor_pole"
+label = "Constructor pole position"
+default = false
+payoff = { subject = "team", predicate = "stage_top", stage = "qual", n = 1, aggregate = "any" }
+
+[[kinds]]
+code = "race_constructor_fastest_lap"
+label = "Constructor fastest lap"
+default = false
+payoff = { subject = "team", predicate = "indicator", of = "race_fastest_lap", aggregate = "any" }
+
+# A team's points in the race, ranked (Polymarket's "<GP>: Which Constructor scores 2nd?" to "5th?"; 1st is
+# race_constructor_top), and two teams head to head ("<GP> – Constructor Matchups")
+
+[[kinds]]
+code = "race_constructor_p2"
+label = "Constructor scores 2nd"
+default = false
+payoff = { subject = "team", predicate = "points", aggregate = "total", compare = "rank", place = 2 }
+
+[[kinds]]
+code = "race_constructor_p3"
+label = "Constructor scores 3rd"
+default = false
+payoff = { subject = "team", predicate = "points", aggregate = "total", compare = "rank", place = 3 }
+
+[[kinds]]
+code = "race_constructor_p4"
+label = "Constructor scores 4th"
+default = false
+payoff = { subject = "team", predicate = "points", aggregate = "total", compare = "rank", place = 4 }
+
+[[kinds]]
+code = "race_constructor_p5"
+label = "Constructor scores 5th"
+default = false
+payoff = { subject = "team", predicate = "points", aggregate = "total", compare = "rank", place = 5 }
+
+[[kinds]]
+code = "race_constructor_h2h"
+label = "Constructor head-to-head"
+default = false
+payoff = { subject = "team", predicate = "points", aggregate = "total", compare = "ahead" }
+
+# Both of a team's cars on the podium (Polymarket's "Constructor to double podium at <GP>?")
+
+[[kinds]]
+code = "race_team_double_podium"
+label = "Double podium"
+default = false
+payoff = { subject = "team", predicate = "top", n = 3, aggregate = "all" }
+
+# Practice fastest lap (Polymarket's "<GP>: Practice 1 / 2 / 3 Fastest Lap"; C12b): who sets the session's fastest lap.
+# Priced from sims.stage_rank["fp<n>"], each practice session's order of best laps that position_sim draws behind its
+# `practicefast` variant (model.PRACTICE_FASTEST, off by default; the real order once the session has run); settled on
+# the results' fp<n>_position, the session's order of best laps from the stored laps (models/inputs/practice.py):
+# undecidable when the session's laps aren't stored. A driver who set no lap in a session that ran is a NO
+
+[[kinds]]
+code = "race_fp1_fastest"
+label = "Practice 1 fastest lap"
+default = false
+payoff = { subject = "driver", predicate = "stage_top", stage = "fp1", n = 1 }
+settle = { absent = "no" }
+
+[[kinds]]
+code = "race_fp2_fastest"
+label = "Practice 2 fastest lap"
+default = false
+payoff = { subject = "driver", predicate = "stage_top", stage = "fp2", n = 1 }
+settle = { absent = "no" }
+
+[[kinds]]
+code = "race_fp3_fastest"
+label = "Practice 3 fastest lap"
+default = false
+payoff = { subject = "driver", predicate = "stage_top", stage = "fp3", n = 1 }
+settle = { absent = "no" }

@@ -1,0 +1,9 @@
+{% from "_macros.html" import pct, source_note %}
+{# A sport's recent results on the Markets board, loaded when the section is opened (views.board_recent). #}
+{% if not recent %}<p class="legend">No completed race with a result yet.</p>{% endif %}
+<div class="recent">{% for r in recent %}<div>
+  <a href="/races/{{ r.info.race_id }}"><b>{{ r.info.title }}</b></a> <span class="muted">{{ r.info.start_date|fmt }}</span><br>
+  Winner <b>{{ r.winner }}</b>{% if r.our is not none %} · we had <b>{{ pct(r.our) }}</b>{% endif %}{% if r.pm is not none %} · Polymarket {{ pct(r.pm) }}{% endif %}{% if kalshi and r.kalshi is not none %} · Kalshi {{ pct(r.kalshi) }}{% endif %}
+  <div class="legend">{{ r.source }}{% if r.diag %} · <a href="/lab/diagnostics/{{ r.diag }}">diagnostic →</a>{% endif %}</div>
+</div>{% endfor %}</div>
+{% if recent %}{{ source_note(code, ["polymarket"] + (["kalshi"] if kalshi else []), model=true) }}{% endif %}

@@ -1,0 +1,11 @@
+{% from "_macros.html" import empty, csrf %}
+<h2>Forecast scenarios</h2>
+<p class="legend">Forward forecasts with custom knobs. Compare with the live forecast, then promote one to make it the fair price everywhere (board, quotes, Polymarket edges).</p>
+{% if not scenarios %}{{ empty("No scenarios yet: run a Forward forecast (scenario) above.") }}{% else %}
+<div class="scroll"><table><thead><tr><th>Run</th><th class="l">Sport</th><th class="l">Name</th><th>Half-life</th><th>Sims</th><th>Track</th><th class="l">Next race: top 3</th><th>Max win-prob change vs live</th><th></th></tr></thead><tbody>
+{% for s in scenarios %}<tr><td><a href="/lab/runs/{{ s.id }}">#{{ s.id }}</a></td><td class="l">{{ s.sport }}</td><td class="l">{{ s.label or "" }}</td><td>{{ s.half_life|fmt if s.half_life }}</td><td>{{ s.sims or "" }}</td><td>{{ {True: "on", False: "off"}.get(s.track, "") }}</td>
+<td class="l">{% for n, w in s.top %}{{ n }} {{ "%.0f%%"|format(w * 100) }}{{ " · " if not loop.last }}{% endfor %}</td>
+<td>{{ "%.1f pts"|format(s.max_diff * 100) if s.max_diff is not none }}</td>
+<td>{% if s.live %}<span class="chip live">live</span>{% else %}<form method="post" action="/lab/promote/{{ s.id }}" class="inline" data-confirm="Make run #{{ s.id }} the live fair prices?">{{ csrf() }}<button>Promote to live</button></form>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>{% endif %}
+<p class="legend">Live now: {% for f in forecasts %}{{ f.competition_name }} <a href="/lab/runs/{{ f.id }}">#{{ f.id }}</a>{{ " · " if not loop.last }}{% endfor %}</p>

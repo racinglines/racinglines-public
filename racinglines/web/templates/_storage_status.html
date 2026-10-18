@@ -1,0 +1,60 @@
+{# On /admin/db (web/admin.py admin_db; owner, 2026-10-14): VM and bucket health, the VM's history, then where the data
+   lives (racinglines/storage_status.py's snapshot, racinglines/vm_history.py). Sizes and counts only (the bucket holds
+   licensed vendor data), so admin-only. #}
+{% from "_macros.html" import csrf, empty %}
+<section id="storage">
+<div class="page-head"><div><h2>VM and bucket</h2><p class="sub">Health, the VM's last {{ 14 }} days, and where the data lives. The same snapshot as <code>racinglines db storage</code> and the MCP tool <code>storage_status</code>.</p></div>
+<div class="actions"><form method="post" action="/admin/storage" class="inline">{{ csrf() }}<button type="submit"{{ ' disabled' if refreshing }}>{{ "Refreshing…" if refreshing else "Refresh now" }}</button></form></div></div>
+{% if not snap %}{{ empty("No storage snapshot yet. The first one is being taken now (the bucket listing can take a few minutes); reload in a while.") }}
+{% else %}
+<p class="legend">Snapshot {{ snap.taken_at }} ({{ (age / 60)|round|int }} min ago, took {{ snap.seconds }} s){% if age is not none and age >= stale %} · <span class="warn">stale, refreshing in the background</span>{% elif refreshing %} · refreshing in the background{% endif %}.</p>
+
+<div class="card"><h2>Health</h2><table><tbody>
+{% for h in health %}<tr><td class="l nowrap" style="white-space:nowrap"><span class="pill {{ 'good' if h.state == 'ok' else 'bad' if h.state == 'bad' else 'no' }}">{{ "✓ ok" if h.state == 'ok' else "✕ down" if h.state == 'bad' else "! check" }}</span></td><td class="l">{{ h.check }}</td><td class="l">{{ h.text }}</td></tr>{% endfor %}
+</tbody></table></div>
+{% endif %}
+
+<div class="card"><h2>VM over time</h2>
+{% if vm_charts|selectattr("chart")|list %}<div class="vm-charts">
+{% for c in vm_charts %}<figure class="vm-chart"><figcaption><b>{{ c.label }}</b>{% if c.chart %} · now {{ "%.0f"|format(c.chart.last) if c.unit else "%.2f"|format(c.chart.last) }}{{ c.unit }} · peak {{ "%.0f"|format(c.chart.max) if c.unit else "%.2f"|format(c.chart.max) }}{{ c.unit }}{% endif %}</figcaption>
+{% if c.chart %}{% set g = c.chart %}<svg viewBox="0 0 {{ g.w }} {{ g.h }}" preserveAspectRatio="none" role="img" aria-label="{{ c.label }} over time">
+<line class="vm-axis" x1="0" y1="{{ g.h - 4 }}" x2="{{ g.w }}" y2="{{ g.h - 4 }}"/><line class="vm-grid" x1="0" y1="4" x2="{{ g.w }}" y2="4"/>
+<polyline class="vm-line" points="{{ g.points }}"/>
+{% for x, y, t, v in g.dots %}<rect class="vm-hit" x="{{ '%.1f'|format(x - 3) }}" y="0" width="6" height="{{ g.h }}"><title>{{ t|fmt_epoch }} · {{ "%.1f"|format(v) }}{{ c.unit }}</title></rect>{% endfor %}
+</svg><div class="vm-scale legend"><span>{{ g.start|fmt_epoch }}</span><span>top {{ "%.0f"|format(g.ymax) }}{{ c.unit }}</span><span>{{ g.end|fmt_epoch }}</span></div>
+{% else %}<p class="muted">Not enough samples yet.</p>{% endif %}</figure>{% endfor %}
+</div>
+<details class="mt"><summary>As a table</summary><div class="scroll" data-rows="12"><table><thead><tr><th class="l">Metric</th><th>Now</th><th>Peak</th><th class="l">From</th><th class="l">To</th></tr></thead><tbody>
+{% for c in vm_charts if c.chart %}<tr><td class="l">{{ c.label }}</td><td>{{ "%.1f"|format(c.chart.last) }}{{ c.unit }}</td><td>{{ "%.1f"|format(c.chart.max) }}{{ c.unit }}</td><td class="l">{{ c.chart.start|fmt_epoch }}</td><td class="l">{{ c.chart.end|fmt_epoch }}</td></tr>{% endfor %}
+</tbody></table></div></details>
+{% else %}<p class="muted">No history yet: the web app samples CPU, memory, load and disk every 5 minutes from its start (data/status/vm_history.jsonl).</p>{% endif %}
+</div>
+
+{% if snap %}
+<div class="card"><h2>VM disk and data folders</h2>
+{% set d = snap.vm.disk %}
+<p>Disk: <b>{{ human(d.free) }} free</b> of {{ human(d.total) }} ({{ human(d.used) }} used, {{ (100 * d.used / d.total)|round|int if d.total else 0 }}%).</p>
+{% for r in snap.vm.roots %}
+<h3 class="mt"><code>{{ r.path }}</code> · {{ human(r.bytes) }}</h3>
+<div class="scroll"><table><thead><tr><th class="l">Folder</th><th>Size</th><th>Files</th><th class="l">Newest file</th></tr></thead><tbody>
+{% for f in r.folders|sort(attribute="bytes", reverse=true) %}<tr><td class="l">{{ f.name }}/</td><td>{{ human(f.bytes) }}</td><td>{{ "{:,}".format(f.files) }}</td><td class="l">{{ f.newest or "" }}</td></tr>{% endfor %}
+</tbody></table></div>
+<p class="legend">Database dumps in backups/db: <b>{{ r.backups.dumps }}</b> ({{ human(r.backups.bytes) }}){% if r.backups.newest %}, newest {{ r.backups.newest }}{% endif %}.</p>
+{% endfor %}
+</div>
+
+<div class="card"><h2>Databases on the VM</h2>
+{% if snap.databases %}<table><thead><tr><th class="l">Database</th><th>Size</th></tr></thead><tbody>
+{% for db in snap.databases %}<tr><td class="l">{{ db.name }}</td><td>{{ human(db.bytes) }}</td></tr>{% endfor %}
+</tbody></table>{% else %}{{ empty(snap.databases_error or "No database sizes in this snapshot.") }}{% endif %}
+</div>
+
+{% for b in snap.buckets %}<div class="card"><h2>Bucket <code>gs://{{ b.bucket }}</code>{% if not b.error %} · {{ human(b.bytes) }}, {{ "{:,}".format(b.objects) }} objects{% endif %}</h2>
+{% if b.error %}<p class="bad">Could not list it from the VM: {{ b.error }}</p>
+{% else %}<div class="scroll"><table><thead><tr><th class="l">Prefix</th><th>Size</th><th>Objects</th><th class="l">Newest object</th></tr></thead><tbody>
+{% for p in b.prefixes %}<tr><td class="l"><b>{{ p.prefix }}</b></td><td>{{ human(p.bytes) }}</td><td>{{ "{:,}".format(p.objects) }}</td><td class="l">{{ p.newest }}</td></tr>
+{% for c in p.children %}<tr><td class="l">&nbsp;&nbsp;{{ c.prefix }}</td><td>{{ human(c.bytes) }}</td><td>{{ "{:,}".format(c.objects) }}</td><td class="l">{{ c.newest }}</td></tr>{% endfor %}
+{% endfor %}</tbody></table></div>{% endif %}
+</div>{% endfor %}
+{% endif %}
+</section>

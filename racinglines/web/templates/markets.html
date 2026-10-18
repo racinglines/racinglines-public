@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% from "_macros.html" import empty, csrf, page_head %}
+{% block title %}Linked markets{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/admin">Admin</a> › Linked markets</p>
+{{ page_head("Linked markets") }}
+{% include "_admin_nav.html" %}
+<p><a href="/markets/linked/lookup">+ Link a Polymarket market</a></p>
+{% if links %}<div class="scroll"><table>
+<thead><tr><th class="l">Market</th><th class="l">Outcome</th><th class="l">Athlete</th><th class="l">Prediction</th><th class="l">Race</th><th>Model fair price</th><th>Active</th><th></th></tr></thead>
+<tbody>{% for l in links %}<tr>
+<td class="l"><a href="/markets/linked/{{ l.id }}">{{ l.question }}</a></td><td class="l">{{ l.outcome }}{% if l.invert %} <span class="muted">(inverse)</span>{% endif %}</td>
+<td class="l"><a href="/athletes/{{ l.athlete_id }}">{{ l.athlete }}</a></td><td class="l">{% if l.params and l.params.placeholder %}<span class="muted" title="an unnamed Polymarket slot, not priced">placeholder</span>{% else %}{{ l.prediction }}{% endif %}</td>
+<td class="l">{{ l.venue or ("next round" if l.prediction.startswith("race") else "season") }}</td>
+<td>{{ l.model_prob|fmt("model_prob") if l.model_prob is not none else "–" }}</td><td>{{ "yes" if l.active else "no" }}</td>
+<td><form class="inline" method="post" action="/markets/linked/{{ l.id }}/toggle">{{ csrf() }}<button>{{ "Deactivate" if l.active else "Activate" }}</button></form></td>
+</tr>{% endfor %}</tbody></table></div>
+{% else %}{{ empty("No markets linked yet.") }}{% endif %}
+{% endblock %}

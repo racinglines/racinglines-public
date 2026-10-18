@@ -1,0 +1,90 @@
+{% extends "base.html" %}{% from "_macros.html" import chart as svg_chart, empty, flash, kpi, pnl, page_head, source_note %}
+{% block title %}History{% endblock %}
+{% block content %}
+{# web/fantasy_routes.py history_page: the alpha's History tab (web/layout.py). Your F$, every trade by hand and by the
+   strategy you follow, F$ through the run, and the leaderboard (fantasy/ledger.ranked: ROI x sqrt(trades)). #}
+{% call page_head("History", "Every trade you have made, your fantasy bucks through the run, and the leaderboard. F$ only: nothing here is real money, and no order ever reaches an exchange.") %}
+<a href="/trade">Trade →</a> · <a href="#leaderboard">Leaderboard ↓</a>{% endcall %}
+{{ flash(msg) }}
+{% if not ready %}<div class="card"><h2>Not open yet</h2><p>Fantasy trading hasn't been set up on this site yet.</p></div>{% else %}
+
+<div class="kpis hero">
+  {{ kpi("Total F$", "F${:,.2f}".format(s.total), "your 1,000 plus both P&Ls" ~ (" · rank " ~ mine.rank ~ " of " ~ rows|selectattr("rank")|list|length if mine and mine.rank else "")) }}
+  {{ kpi("Cash", "F${:,.2f}".format(s.cash), "what you can trade with now") }}
+  {{ kpi("By hand", s.manual_pnl, s.open ~ " open, worth " ~ "F$%.2f"|format(s.held) ~ " now" ~ (" (" ~ s.unpriced ~ " unpriced)" if s.unpriced else ""), "money") }}
+  {{ kpi("Strategy", s.strategy_pnl, (profile.name if profile else "none picked") ~ " · " ~ s.strategy_positions ~ " positions", "money") }}
+</div>
+{{ source_note(note_sport, note_venues, model=(profile is not none)) }}
+
+<div class="card"><h2>F$ by hand through the run</h2>
+{% if chart %}{{ svg_chart(chart) }}
+<p class="muted">Each point is after an order, with open trades at what they cost (so a trade moves it only by its fee);
+the last point, marked "now", values open trades at what they would sell for now.</p>
+{% else %}{{ empty("Your F$ through the run shows here once you have traded by hand.") }}{% endif %}</div>
+
+<div class="card"><h2>Open trades</h2>
+{% if positions %}<div class="scroll"><table>
+<thead><tr><th>Market</th><th>Side</th><th class="num">Shares</th><th class="num">Cost</th><th class="num">Worth now</th><th class="num">P&amp;L</th><th></th></tr></thead>
+<tbody>{% for p in positions %}<tr>
+  <td class="wrap"><a href="/trade?link={{ p.market_link_id }}">{{ p.group_title or p.question }}</a><div class="muted">{{ p.event_title or "" }} · {{ p.exchange|capitalize }}</div></td>
+  <td><span class="pill {{ p.side }}">{{ p.side|upper }}</span></td>
+  <td class="num">{{ "%g"|format(p.shares) }}</td><td class="num">{{ "%.2f"|format(p.cost) }}</td>
+  <td class="num">{{ "%.2f"|format(p.value) if p.value is not none else "–" }}</td><td class="num">{{ pnl(p.pnl) }}</td>
+  <td><a href="/trade?link={{ p.market_link_id }}&action=sell&side={{ p.side }}">Sell</a></td>
+</tr>{% endfor %}</tbody></table></div>
+{% else %}{{ empty("No open trades. Trades you make by hand show here.") }}{% endif %}</div>
+
+<div class="card"><h2>Settled trades <span class="muted">{{ settled|length }}</span></h2>
+{% if settled %}<div class="scroll" data-rows="12"><table>
+<thead><tr><th>Market</th><th>Side</th><th class="num">Shares</th><th class="num">Cost</th><th>Outcome</th><th class="num">Payout</th><th class="num">P&amp;L</th><th>Settled</th></tr></thead>
+<tbody>{% for p in settled %}<tr>
+  <td class="wrap">{{ p.group_title or p.question }}<div class="muted">{{ p.event_title or "" }} · {{ p.exchange|capitalize }}</div></td>
+  <td>{% if p.side %}<span class="pill {{ p.side }}">{{ p.side|upper }}</span>{% else %}–{% endif %}</td>
+  <td class="num">{{ "%g"|format(p.shares) }}</td><td class="num">{{ "%.2f"|format(p.cost) }}</td>
+  <td>{% if p.outcome is none %}{{ p.status }}{% else %}{{ "YES" if p.outcome else "NO" }}{% endif %}</td>
+  <td class="num">{{ "%.2f"|format(p.payout) if p.payout is not none else "–" }}</td><td class="num">{{ pnl(p.pnl) if p.pnl is not none else "–" }}</td>
+  <td>{{ p.settled_at|fmt }}</td>
+</tr>{% endfor %}</tbody></table></div>
+<p class="muted">Each share of the winning side paid F$1 when the market resolved; P&amp;L is the payout less what the shares cost (fees are in your orders).</p>
+{% else %}{{ empty("No settled trades yet. A trade by hand shows here once its market resolves and pays out.") }}{% endif %}</div>
+
+<div class="card"><h2>Orders by hand <span class="muted">{{ orders|length }}</span></h2>
+{% if orders %}<div class="scroll" data-rows="12"><table>
+<thead><tr><th>When</th><th>Market</th><th>Order</th><th class="num">Filled</th><th class="num">Avg price</th><th class="num">Fee</th><th>Result</th></tr></thead>
+<tbody>{% for o in orders %}<tr>
+  <td>{{ o.created_at|fmt }}</td><td class="wrap">{{ o.group_title or o.question or "–" }}</td>
+  <td>{{ (o.action or "")|capitalize }} {{ "%g"|format(o.shares_req) if o.shares_req is not none }} {{ (o.side or "")|upper }}{% if o.limit_price is not none %} at {{ "%.2f"|format(o.limit_price) }}{% endif %}</td>
+  <td class="num">{{ "%g"|format(o.shares_filled) }}</td><td class="num">{{ "%.3f"|format(o.avg_price) if o.avg_price is not none else "–" }}</td>
+  <td class="num">{{ "%.2f"|format(o.fee) }}</td>
+  <td>{% if o.status == 'rejected' %}<span class="muted" title="{{ reasons.get(o.reject_reason, '') }}">refused: {{ reasons.get(o.reject_reason, o.reject_reason) }}</span>{% else %}{{ o.status }}{% endif %}</td>
+</tr>{% endfor %}</tbody></table></div>
+{% else %}{{ empty("No orders yet. Orders you place on Trade show here, refused ones too.") }}{% endif %}</div>
+
+<div class="card"><h2>Your strategy's trades{% if profile %} <span class="muted">{{ profile.name }}</span>{% endif %}</h2>
+{% if strat %}<div class="scroll" data-rows="12"><table>
+<thead><tr><th>Event</th><th>Kind</th><th>Subject</th><th>Side</th><th>State</th><th class="num">P&amp;L</th></tr></thead>
+<tbody>{% for r in strat %}<tr>
+  <td class="wrap">{{ r.event_name or r.event_key }}</td><td>{{ r.kind|kind }}</td><td class="wrap">{{ r.subject }}</td>
+  <td>{% if r.side %}<span class="pill {{ r.side }}">{{ r.side|upper }}</span>{% else %}–{% endif %}</td>
+  <td>{{ r.state }}</td><td class="num">{{ pnl(r.pnl) if r.pnl is not none else "–" }}</td>
+</tr>{% endfor %}</tbody></table></div>
+<p class="muted">Paper trades the strategy made for you at the exchanges' recorded prices. <a href="/positions">Its positions, stage by stage →</a></p>
+{% elif profile %}{{ empty("The strategy you follow hasn't traded yet. It trades on race weekends.") }}
+{% else %}<p class="muted">You don't follow a strategy. <a href="/strategy/pick">Pick one</a> and it paper-trades for you on race weekends.</p>{% endif %}</div>
+{% endif %}
+
+<section id="leaderboard" class="card"><h2>Leaderboard</h2>
+{% if rows %}<div class="scroll"><table>
+<thead><tr><th class="num">#</th><th>Player</th><th class="num">Score</th><th class="num">ROI</th><th class="num">Trades</th><th class="num">P&amp;L</th><th class="num">By hand</th><th class="num">Strategy</th></tr></thead>
+<tbody>{% for r in rows %}<tr{% if user and r.username == user.username %} class="sel"{% endif %}>
+  <td class="num">{{ r.rank if r.rank else "–" }}</td><td>{{ r.username }}{% if user and r.username == user.username %} <span class="pill new">you</span>{% endif %}</td>
+  <td class="num">{% if r.score is not none %}<b>{{ "%.2f"|format(r.score) }}</b>{% else %}<span class="muted">–</span>{% endif %}</td>
+  <td class="num">{{ "%.1f%%"|format(r.roi * 100) if r.roi is not none else "–" }}</td><td class="num">{{ r.trades }}</td>
+  <td class="num">{{ pnl(r.pnl) }}</td><td class="num">{{ pnl(r.manual_pnl) }}</td><td class="num">{{ pnl(r.strategy_pnl) }}</td>
+</tr>{% endfor %}</tbody></table></div>
+<p class="muted">Score = ROI × √trades, where ROI is P&amp;L (by hand plus strategy) over the F$ staked, and trades counts
+your filled orders plus the markets your strategy traded. A player needs {{ min_trades }} trades to be ranked; those with
+fewer are listed after, with "–" for rank. Open trades count at what they would sell for now (the best recorded bid).
+The demo accounts aren't listed.</p>
+{% else %}{{ empty("No players yet.") }}{% endif %}</section>
+{% endblock %}

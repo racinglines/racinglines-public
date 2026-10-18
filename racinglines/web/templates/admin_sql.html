@@ -1,0 +1,19 @@
+{% extends "base.html" %}{% from "_macros.html" import csrf, page_head %}
+{% block title %}SQL{% endblock %}
+{% block content %}
+{{ page_head("SQL console") }}
+{% include "_admin_nav.html" %}
+<p class="muted">Runs as the app's database user. <b>Read</b> mode runs in a READ ONLY transaction (any write is rejected by Postgres).
+<b>Write</b> mode needs both boxes ticked. Every statement is logged. 15 s timeout, {{ 500 }} rows max.</p>
+<form method="post" action="/admin/sql" class="card">{{ csrf() }}
+<textarea name="sql" aria-label="SQL statement">{{ sql }}</textarea>
+<p><label><input type="checkbox" name="write" value="1" {% if write %}checked{% endif %}> <span class="bad">allow writes</span></label>
+<label><input type="checkbox" name="confirm" value="yes"> confirm</label>
+<button class="primary">Run</button></p>
+</form>
+{% if error %}<p class="bad">{{ error }}</p>{% endif %}
+{% if info %}<p class="good">{{ info }}</p>{% endif %}
+{% if columns %}<div class="scroll"><table><thead><tr>{% for c in columns %}<th class="l">{{ c }}</th>{% endfor %}</tr></thead><tbody>
+{% for r in records %}<tr>{% for v in r %}<td class="wrap">{{ v[:300] }}</td>{% endfor %}</tr>{% endfor %}
+</tbody></table></div>{% endif %}
+{% endblock %}

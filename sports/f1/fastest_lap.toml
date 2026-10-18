@@ -1,0 +1,72 @@
+# Who sets the race's fastest lap, by finishing position and race pace: the weights of position_sim's "flpos" variant
+# (racinglines/models/inputs/laps.py fastest_lap_from_position, FL_FROM = "position"; decision log 2026-10-07 in
+# docs/f1-roadmap.md, provisional). In each simulation the fastest lap goes to one classified car i, drawn with
+# probability proportional to
+#
+#     band rate[band of its finishing position] * exp(-(pace_i - best pace) / pace_scale)
+#
+# normalised over the classified cars, where pace is the simulation's race pace (rp with the season shock, a fraction
+# of a lap; lower is quicker). So a surprise midfield winner in a slow car is less likely to set it than a top-car
+# winner. A retired car never gets it (none of the 258 DNFs in the window did).
+#
+# Source: the VM database (MCP `sql`, 2026-10-07), F1 Grands Prix 2022-2026 with lap times (108 races): per race the
+# fastest race lap is min(laps.lap_time_ms) with laps.deleted not true, over laps -> results -> rounds (kind 'race') ->
+# races -> events -> seasons -> competitions -> sports (code 'f1'). `races` counts the races in which that position was a
+# classified car (results.status = 'OK'), `fl` the races in which that car set the fastest lap:
+#
+#   SELECT res.position, count(*) AS races, sum((fl.result_id IS NOT NULL)::int) AS fl
+#   FROM <2022-26 race rounds> r JOIN results res ON res.round_id = r.round_id LEFT JOIN <fastest lap's result> fl
+#     ON fl.result_id = res.id
+#   WHERE res.status = 'OK' GROUP BY 1 ORDER BY 1
+#
+# In the window 107 fastest laps went to classified cars, 1 to a car disqualified after the flag, 0 to the 258 DNFs.
+# The winner set it 36 times in 108 (33 %), second 18 (17 %).
+#
+# [fit] pace_scale (used by the draw): the band rates below are the position weights; pace_scale is the one parameter
+# fitted, by maximum likelihood, on the same races (107: the one whose fastest lap went to a car disqualified after the
+# flag dropped): a conditional logit, one choice per race among its classified cars, with log(band rate) as an offset
+# and the car's race pace gap (its median lap over accurate laps without pit in/out laps or deleted laps, over the
+# race's quickest median, minus 1). k = 1 / pace_scale = 46 (s.e. about 15); negative log-likelihood 306.8 uniform,
+# 242.2 band rates alone, 236.5 band rates + pace. Two other fits, not used: free band weights with pace (225.6; weights
+# 1 / 0.64 / 0.47 / 0.40, pace_scale 0.0077) fits history best but is fitted on realized race pace, which the
+# simulation doesn't have: on the simulation's pre-race pace (rp + shock) it gave the winner the fastest lap only 20 %
+# of the time on Singapore 2026 (run 9652's paces and win odds, emulated); with the band rates and pace_scale 0.0217 it
+# is 37 % (history 33 % in 2022-26, 42 % in 2025-26). Per-driver habits (who chases the fastest lap when it is free)
+# are not modelled.
+#
+# Smoothing: the counts thin out behind P2 (0 to 8 per position, and 0 fastest laps at P9, P17, P19, P20 is noise, not
+# a rule), so positions are pooled into `bands` and every position in a band gets the band's rate, sum(fl) / sum(races).
+# P1 and P2 keep their own rates; P3-P8 pool to 38 / 648 = 0.059 and P9 onward to 15 / 1042 = 0.014. A position past
+# the table (a 22-car field's P21-P22) takes the last band's rate. The bands were set by eye on these counts, before
+# any backtest, and not tuned.
+
+window = "2022-2026"
+source = "VM laps/results, F1 Grands Prix 2022-2026 (108 races), MCP sql 2026-10-07"
+bands = [[1, 1], [2, 2], [3, 8], [9, 99]]
+
+# position = classified finishing position; races = races with a classified car there; fl = of those, fastest laps
+by_position = [
+    { position = 1, races = 108, fl = 36 },
+    { position = 2, races = 108, fl = 18 },
+    { position = 3, races = 108, fl = 7 },
+    { position = 4, races = 108, fl = 8 },
+    { position = 5, races = 108, fl = 6 },
+    { position = 6, races = 108, fl = 7 },
+    { position = 7, races = 108, fl = 6 },
+    { position = 8, races = 108, fl = 4 },
+    { position = 9, races = 108, fl = 0 },
+    { position = 10, races = 108, fl = 2 },
+    { position = 11, races = 108, fl = 1 },
+    { position = 12, races = 108, fl = 1 },
+    { position = 13, races = 108, fl = 2 },
+    { position = 14, races = 108, fl = 1 },
+    { position = 15, races = 103, fl = 1 },
+    { position = 16, races = 95, fl = 4 },
+    { position = 17, races = 83, fl = 0 },
+    { position = 18, races = 61, fl = 3 },
+    { position = 19, races = 35, fl = 0 },
+    { position = 20, races = 17, fl = 0 },
+]
+
+[fit]
+pace_scale = 0.0217          # a fraction of a lap (about 2 s on a 90 s lap): the weight falls by e per this pace gap

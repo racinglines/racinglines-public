@@ -1,0 +1,16 @@
+# The public /term page (racinglines/web/term_routes.py): the demo pack's quickstart, recorded and replayed in the
+# browser. The commands are not written here: they are the pack's [[quickstart]] list
+# (racinglines/demo/packs/<pack>/pack.toml), the same one docs/quickstart.md is built from. When it or the CLI changes,
+# re-record (drop the demo store first for a true first run) and update `recorded`:
+#   python scripts/demo/record_term.py --run      # snapshots the list to quickstart.json, runs it, saves <id>.ansi/.html
+#   python scripts/demo/record_term.py            # re-renders the saved output only
+#
+# Offline, synthetic data only (owner, 2026-10-11: start with the no-MCP demo, synthetic is fine).
+
+pack = "kart"
+section = "Kart quickstart"     # the pack's steps' part heading (a [[quickstart]] step with its own `section` keeps it)
+# Extra parts after the pack's, each a steps file here (<part>.toml) recorded on its own; shown once recorded.
+#   f1-singapore: the 2026 Singapore GP on real data and tapes, recorded on the VM against staging
+#   (scripts/vm/record_term_f1.sh), then copied here and rendered (python scripts/demo/record_term.py).
+parts = ["f1-singapore"]
+recorded = "2026-10-12, on a fresh demo store"

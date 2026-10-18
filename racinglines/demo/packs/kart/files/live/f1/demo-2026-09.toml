@@ -1,0 +1,35 @@
+# Launch spec: the kart pack's live rehearsal, round 9 of 2026 (Bowser's Castle), already raced in the synthetic data,
+# so the book settles from its results. A data file of the pack (copied into the demo data folder, data/demo/kart/live/),
+# the same keys `racinglines live new f1` writes. Run it with
+#   racinglines live run f1/demo-2026-09 --demo --simulate --no-fetch
+sport = "f1"
+event = "2026-09"
+run = "demo-2026-09"
+title = "Bowser's Castle Grand Prix 2026 (synthetic)"
+
+[live.crowd]
+takers = 100                    # 100 simulated takers (sports/f1.toml has 1000)
+
+[live.markets]
+h2h_from = "last_listed"        # head-to-head pairs: the last race the (synthetic) Polymarket listed
+
+# The demo taker's hype picks, placed at the opening at the maker's ask
+[[picks]]
+name = "Mario"
+market = "race_win"
+why = "the face of the grid"
+
+[[picks]]
+name = "Bowser"
+market = "race_win"
+why = "it's his castle"
+
+[[picks]]
+name = "Peach"
+market = "race_podium"
+why = "a royal podium"
+
+[[picks]]
+name = "Donkey Kong"
+market = "race_podium"
+why = "barrels of pace"
