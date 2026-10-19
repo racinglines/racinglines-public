@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The package as `pip install racinglines` gets it: build the sdist and wheel, check their metadata, install the wheel
 # with only its core dependencies into a fresh venv, and run the CLI from an empty folder with no checkout, database or
-# network. The release workflow (deploy/ci/release.yml) runs it before any upload; run it locally before a tag.
+# network. Both release workflows (deploy/ci/release.yml, oss/overlay/.github/workflows/release.yml) run it before any
+# push or upload; run it locally before a tag.
 #
 #   bash scripts/release/package_smoke.sh [DIST_DIR]      # DIST_DIR default: dist/ (rebuilt)
 #   RELEASE=1 bash scripts/release/package_smoke.sh ...   # before an upload: the LICENSE must be the plain MIT text

@@ -150,25 +150,41 @@ the exchange price, the book's implied probability and the expected value agains
 
 ### 9. Open the web app and the live viewer
 
+> **Read this first.** This runs your own copy of the racinglines web app on your machine. It is not
+> [racinglines.bet](https://racinglines.bet), and accounts here have nothing to do with that site. The code is
+> MIT-licensed ([LICENSE](LICENSE)): use it, change it, host it. The racinglines name and branding (the logo in
+> `racinglines/web/static/brand/`, the wordmark on the sign-in page, the page titles and the top bar) are
+> © 2026 Kevin Lalli and not covered by that licence: replace them before you put this app on any public link.
+> `racinglines web` prints the same notice when it starts.
+
 ```bash
-racinglines users setup --demo
 RACINGLINES_FANTASY=1 ADMIN_PASSWORD=choose-one racinglines web --demo
 ```
 
-`users setup` creates the accounts and fantasy-trading tables in the demo database (once).
-
 Pick your own password in place of `choose-one`. The app runs at <http://127.0.0.1:8000> on your machine only; stop
-it with Ctrl+C.
+it with Ctrl+C. With `--demo` it sets up the accounts and fantasy-trading tables on first start and creates the demo
+accounts, so nothing else is needed before you sign in.
 
-1. Open <http://127.0.0.1:8000/signin> and sign in as `admin` with the password you chose.
-2. A box asks for an email so you don't get locked out. Click **Skip for now**; nothing leaves your machine.
-3. Click **Live** in the top bar. That's the live viewer for the race you ran in step 7: the winner, the maker's
+1. Open <http://127.0.0.1:8000> and click **Try the demo** (the demo account, `maker`, a pro). Or sign in as `admin`
+   with the password you chose; a box then asks for an email so you don't get locked out: click **Skip for now**,
+   nothing leaves your machine.
+2. Click **Live** in the top bar. That's the live viewer for the race you ran in step 7: the winner, the maker's
    settled P&L, the crowd's fills and volume, and a **Replay** bar to step or play through the weekend's seven
    updates as they were seen live.
-4. **Markets** shows the forecast you saved in step 6, and **Lab** has the backtests and strategy tools.
-5. **Trade** and **History** are fantasy trading with F$ 1,000 of play money (`RACINGLINES_FANTASY=1` turns them
+3. **Markets** shows the forecast you saved in step 6, and **Lab** has the backtests and strategy tools.
+4. **Trade** and **History** are fantasy trading with F$ 1,000 of play money (`RACINGLINES_FANTASY=1` turns them
    on). Trade lists exchange markets with a book recorded in the last day; the demo's recorded books are older, so
    in the demo it opens with no markets.
+
+To add more accounts, by role, stop the app (Ctrl+C) and run, for each one:
+
+```bash
+racinglines users add alice --role basic --demo
+```
+
+`--role` is `admin` (everything, plus user management and the database explorer), `pro` (fair prices, quotes,
+every strategy and the Lab) or `basic` (open markets, a few taker strategies, their own bets). Each prints a one-time
+password; `racinglines users list --demo` shows who exists. Then start the app again as above.
 
 ### 10. The downhill sim
 
@@ -206,10 +222,9 @@ again. To remove everything: `docker rm -f racinglines-db && docker volume rm ra
 ### From source (contributors)
 
 ```bash
-git clone https://github.com/racinglines/racinglines.git && cd racinglines
+git clone https://github.com/racinglines/racinglines-public.git && cd racinglines-public
 python3 -m venv .venv-rl && source .venv-rl/bin/activate
-pip install -r requirements.txt && pip install -e .     # Python 3.12+ for the pinned versions
-docker compose up -d                                     # the same database as step 3
+pip install -e ".[web]"                                 # Python 3.11+; the database is step 3's container
 ```
 
 Then steps 3 (`book config` and `db init`) to 10 as above; the demo's files go under `data/demo/kart/` in the checkout.
