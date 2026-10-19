@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "racinglines"
-version = "1.0.1rc2"
+version = "1.0.1rc3"
 description = "Fair prices for Formula 1 prediction markets, and the tools to test trading strategies against them"
 license = "MIT"                    # plain MIT on PyPI; the public export ships the plain MIT LICENSE
 license-files = ["LICENSE"]
@@ -29,3 +29,4 @@ racinglines = "racinglines.cli:main"
 Homepage = "https://racinglines.bet"
 Documentation = "https://racinglines.bet/docs"
 Quickstart = "https://racinglines.bet/term"
+Changelog = "https://github.com/racinglines/racinglines-public/blob/main/CHANGELOG.md"
