@@ -149,7 +149,7 @@ def fantasy_trade(request: Request, link: int = 0, q: str = "", msg: str = "", a
                 sel["closes_at"] = FX.closes_for(c, [full])[full["id"]]
                 sel["season"] = full["prediction"] in FX.SEASON_KINDS
             if sel is not None and sel["sport_ok"]:
-                book = FX.latest_book(_books(), sel["token_id"])
+                book = FX.quote_getter(_books(), full)(sel["token_id"])     # live when the recorded one is old
                 if book:
                     nb, na = FX.yes_to_no(book["bids"], book["asks"])
                     book.update(no_bids=nb, no_asks=na)

@@ -203,9 +203,9 @@ def live_book(exchange, token_id, transport=None):
                 r = c.get("/book", params={"token_id": token_id})
                 r.raise_for_status()
                 b = r.json()
-            ts = datetime.fromtimestamp(int(b["timestamp"]) / 1000, tz=timezone.utc) if b.get("timestamp") \
-                else datetime.now(timezone.utc)
-            return dict(ts=ts, bids=levels(PS._levels(b.get("bids"), True)), asks=levels(PS._levels(b.get("asks"), False)))
+            # the book as of this request: Polymarket's `timestamp` is when the book last changed, so a quiet book
+            # (podium, h2h) read just now carried an hours-old ts and was refused as stale_book
+            return dict(ts=datetime.now(timezone.utc), bids=levels(PS._levels(b.get("bids"), True)), asks=levels(PS._levels(b.get("asks"), False)))
     except (httpx.HTTPError, ValueError, KeyError, TypeError):
         return None
     return None
@@ -217,6 +217,24 @@ def book_getter(engine, link):
     if books_mode() == "live" and link is not None and link.get("exchange") in EXCHANGES:
         return lambda tok: live_book(link["exchange"], tok)
     return lambda tok: latest_book(books_engine(engine), tok)
+
+
+def quote_getter(engine, link):
+    """quote's default get_book: the latest recorded book, and, when that is missing or older than MAX_AGE_MIN, the
+    venue's live book (books_mode "live"), so a quiet market whose recorded snapshot hasn't changed for hours still
+    previews; the recorder stores a Polymarket book only when it changes (snapshot ts = the venue's last change)."""
+    recorded = lambda tok: latest_book(books_engine(engine), tok)
+    if books_mode() != "live" or link is None or link.get("exchange") not in EXCHANGES:
+        return recorded
+
+    def get(tok):
+        b = recorded(tok)
+        if b is not None:
+            ts = b["ts"] if b["ts"].tzinfo else b["ts"].replace(tzinfo=timezone.utc)
+            if (datetime.now(timezone.utc) - ts).total_seconds() <= MAX_AGE_MIN * 60:
+                return b
+        return live_book(link["exchange"], tok) or b
+    return get
 
 
 def quotes(engine, token_ids):
@@ -489,14 +507,14 @@ def _lid(link_id):
         return None
 
 
-def quote(conn, user, link_id, side, action, shares, limit, now=None, get_book=None, demo=False):
+def quote(conn, user, link_id, side, action, shares, limit, now=None, get_book=None, demo=False, books=None):
     """What place would do with this order now, writing nothing: the same three steps in the same order (input,
     account, link and close, cap; the book and its age; the position's rules, the walk, the fee, the balance), read
     without the account's lock, so a quote that fills can still be refused a moment later. -> dict(ok, reason, message,
     status filled|partial, shares, limit, fills [(price, shares)], filled, avg_price, notional, fee, total (what a buy
-    costs, fee included, or a sale brings after it), book_ts, age_s, cash)."""
+    costs, fee included, or a sale brings after it), book_ts, age_s, cash). The book: get_book, else quote_getter on
+    `books` (an engine holding the recorded books; default conn's)."""
     now = now or datetime.now(timezone.utc)
-    get_book = get_book or (lambda tok: latest_book(books_engine(conn.engine), tok))
     side, action = str(side or "").lower(), str(action or "").lower()
     lid = _lid(link_id)
     out = dict(ok=False, reason=None, message="", status=None, shares=None, limit=None, fills=[], filled=0, avg_price=None,
@@ -505,7 +523,7 @@ def quote(conn, user, link_id, side, action, shares, limit, now=None, get_book=N
         link = _link(conn, lid) if lid is not None else None
         n, p = _validate(conn, user, link, side, action, shares, limit, now, demo)
         out.update(shares=n, limit=p, cash=round(L.available(conn, user["id"]), 2))
-        lv, snap = _levels(get_book, link, side, action, now)
+        lv, snap = _levels(get_book or quote_getter(books or conn.engine, link), link, side, action, now)
         out.update(book_ts=snap["ts"], age_s=snap["age_s"])
         fills, f, _, _ = _fills(conn, user, link, lid, side, action, n, p, lv, lock=False)
     except Rejected as ex:

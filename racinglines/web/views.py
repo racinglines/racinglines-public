@@ -457,13 +457,13 @@ def _edge_ctx(c, user):
     sports = [x for x in sports if A.shown(user, x)]       # a sport this user doesn't see has no Edge Finder rows
     sport = sport if A.shown(user, sport) else "f1"
     ef = edge.build(c, cs, year, sport, venue)
-    return dict(ef=ef, combos=[list(x) for x in cs], year=year, years=edge.YEARS, candidates=edge.shown_candidates(c),
+    return dict(ef=ef, combos=[list(x) for x in cs], year=year, years=edge.YEARS, candidates=edge.candidates(c),
                 sport=sport, venue=venue, sports=sports, venues=venues, sport_names=_sport_names(),
                 venue_names=_venue_names(),
                 demo_pools=edge.demo_pools(c) if sport == "f1" and venue in ("", "polymarket") else [],
                 sweep_job=f"{sport}_sweep" if f"{sport}_sweep" in jobs.CATALOG else "",
                 models=[(cf["ref"], cf["label"]) for cf in ef["configs"]] or [("baseline", "baseline")],
-                strategies=[(k, edge.label(k)) for k in edge.SHOWN_KEYS])
+                strategies=[(k, edge.label(k)) for k in edge.STRATEGY_KEYS])
 
 
 def _model_brier(c):
@@ -514,7 +514,7 @@ def lab_section(request: Request, key: str, job: str = "", event: str = "", vari
         sel = next((e for e in evs if e["key"] == sel_event), None)
         from racinglines.pipelines import sweep_settings as SS
         knobs = {code: dict(v) for code, v in (pr.get("job_knobs") or {}).items()}     # last used, per job type
-        cands = edge.shown_candidates(c)
+        cands = edge.candidates(c)
         # the sweep form starts from: a candidate, a saved configuration, a variant, or the user's last run
         start = dict(knobs.get("f1_sweep", {}).get("settings") or {})
         source = ""
@@ -916,7 +916,7 @@ def positions_backtests(request: Request, year: int | None = None, sport: str = 
     key = config if config in cfgs else preferred or (SS.Settings.from_dict().key if SS.Settings.from_dict().key in cfgs
                                                        else next(iter(cfgs), ""))
     cfg = cfgs.get(key)
-    strategy = strategy if strategy in E.SHOWN_KEYS else ("update" if key == t1_key or not PF.MAKERS_OPEN else "maker")
+    strategy = strategy if strategy in E.STRATEGY_KEYS else ("update" if key == t1_key else "maker")
     curve = None
     total = None
     traded = 0
@@ -951,7 +951,7 @@ def positions_backtests(request: Request, year: int | None = None, sport: str = 
     sweep_job = f"{sport}_sweep" if f"{sport}_sweep" in jobs.CATALOG else ""
     return render(request, "positions_backtests.html", years=available_years, year=year, sports=sports, sport=sport,
                   venues=venues, venue=venue, configs=cfg_options, config=key, strategy=strategy,
-                  strategies=E.SHOWN_KEYS, strategy_labels=E.STRATEGY_LABEL, backtest_chart=curve, total=total,
+                  strategies=E.STRATEGY_KEYS, strategy_labels=E.STRATEGY_LABEL, backtest_chart=curve, total=total,
                   traded=traded, run_id=run_id, config_name=cfg_name, strategy_name=strategy_name,
                   missing_dates=missing_dates, selection_note=selection_note, t1_key=t1_key, sweep_job=sweep_job,
                   sport_names=_sport_names(), venue_names=_venue_names())

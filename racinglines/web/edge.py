@@ -20,22 +20,18 @@ from sqlalchemy import bindparam, text
 from racinglines.models import evaluate as EV
 from racinglines.pipelines import profiles as PF
 from racinglines.pipelines import sweep_settings as SS
-from racinglines.pipelines import weekend_sweep as WS
 from racinglines.web import prefs as P
 
 STRATEGY_LABEL = dict(EV.STRATEGIES)
 STRATEGY_KEYS = [k for k, _ in EV.STRATEGIES]
-# What the web pages offer: no maker strategies while profiles.MAKERS_OPEN is off (Alpha Fantasy Launch, owner
-# 2026-10-11). STRATEGY_KEYS stays complete for saved runs and the MCP tools.
-SHOWN_KEYS = [k for k in STRATEGY_KEYS if PF.MAKERS_OPEN or k in WS.TAKER_MODES]
-DEFAULT = [("baseline", k) for k in SHOWN_KEYS]
+DEFAULT = [("baseline", k) for k in STRATEGY_KEYS]
 MAX_COMBOS = 30
 IN_SAMPLE = {"early"}          # rules drawn from the sweep they're scored on
 YEARS = (2026, 2025)
 # The benchmark every combo is measured against, pinned so it can't be removed or replaced: the
 # conservative maker replay (quote fair ± 2c, conservative fills) on the baseline model at default
-# settings. Other configurations never replace it. Without makers (Alpha) it is the baseline "update" taker instead.
-BENCHMARK_STRATEGY = "maker" if PF.MAKERS_OPEN else "update"
+# settings. Other configurations never replace it.
+BENCHMARK_STRATEGY = "maker"
 
 
 def label(strategy):
@@ -139,12 +135,12 @@ def apply(cs, action, ref="", strategy=""):
     if action == "add_model":
         if ref_key(ref) is None:
             raise ValueError("unknown configuration")
-        strategies = list(dict.fromkeys(s for _, s in cs)) or SHOWN_KEYS
+        strategies = list(dict.fromkeys(s for _, s in cs)) or STRATEGY_KEYS
         return cs + [(ref, s) for s in strategies if not has(ref, s)]
     if action == "remove_model":
         return [c for c in cs if not same(c[0], ref)]
     if action == "add_strategy":
-        if strategy not in SHOWN_KEYS:
+        if strategy not in STRATEGY_KEYS:
             raise ValueError("unknown strategy")
         models = list(dict.fromkeys(v for v, _ in cs)) or ["baseline"]
         return cs + [(v, strategy) for v in models if not has(v, strategy)]
@@ -348,7 +344,7 @@ def cumulative_curve(weekends, strategy, dates):
 def build(conn, cs, year=2026, sport="f1", venue=None):
     """Everything the Edge Finder template shows, from saved runs only (sport / venue: the filter; venue None for all)."""
     sport = sport or "f1"
-    cs = [c for c in cs if c[1] in SHOWN_KEYS]         # a saved list from before makers were hidden
+    cs = [c for c in cs if c[1] in STRATEGY_KEYS]
     cfgs = configs(conn, year, sport, venue)
     default_key = settings_class(sport).from_dict().key
     runs = {}
@@ -423,11 +419,6 @@ def build(conn, cs, year=2026, sport="f1", venue=None):
                 detail=first, detail_name=next((n for _, _, _, n in columns), None), year=year,
                 n_weekends=max((c["weekends"] for c in cfgs.values()), default=0),
                 configs=sorted(cfgs.values(), key=lambda c: (c["key"] != default_key, c["label"])))
-
-
-def shown_candidates(conn):
-    """candidates() without maker ones while makers are closed (profiles.MAKERS_OPEN)."""
-    return [cd for cd in candidates(conn) if cd["strategy"] in SHOWN_KEYS or cd["strategy"] not in STRATEGY_LABEL]
 
 
 def candidates(conn):

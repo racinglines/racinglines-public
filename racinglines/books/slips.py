@@ -48,8 +48,10 @@ ASSUMPTIONS = (
     "run with exactly these legs); otherwise the product of the marginals, flagged '" + CORRELATED + "'.",
     "The market's slip probability is the product of its legs' prices: no exchange lists the slip itself.",
     "Model and market are shown side by side, never blended (owner, 2026-10-07).",
-    "The market price is the freshest linked exchange's mid (bid/ask midpoint, else its last price, else the tape's).",
+    "The market price is the freshest linked exchange's mid (bid/ask midpoint, else its last price, else the tape's), "
+    "from the newest recorded book when that is newer than the link's last sync; older than 3 h is flagged.",
 )
+STALE_MARKET_HOURS = 3            # as tape_check.sh's STALE_HOURS: an older market price gets a flag
 LEG_FIELDS = ("line", "leg", "status", "reason", "sport", "competition", "season", "round", "event_key", "race_id",
               "event", "kind", "side", "athlete_id", "athlete", "opponent_id", "opponent", "team", "threshold", "odds")
 PRICE_FIELDS = ("book_prob", "run_id", "run_source", "model_prob", "model_note", "market_prob", "market_exchange",
@@ -313,6 +315,37 @@ def _quote_prob(link, tape):
     return p, bid, ask
 
 
+def _now():
+    return datetime.now(timezone.utc)
+
+
+def _latest_book(db, token_id):
+    """The token's newest recorded book: dict(ts, best_bid, best_ask) with at least one side, or None."""
+    df = db.q("""SELECT ts, best_bid, best_ask FROM market_book_snapshots WHERE token_id = :t
+                 AND (best_bid IS NOT NULL OR best_ask IS NOT NULL) ORDER BY ts DESC LIMIT 1""", t=token_id)
+    if not len(df):
+        return None
+    r = df.iloc[0]
+    ts = pd.Timestamp(r["ts"])
+    return dict(ts=ts if ts.tzinfo else ts.tz_localize("UTC"), best_bid=r["best_bid"], best_ask=r["best_ask"])
+
+
+def _stale_flags(legs, now=None):
+    """A flag per leg whose market price is older than STALE_MARKET_HOURS (live books never freeze: warn when the
+    exchange price may be out of sync)."""
+    now = now or _now()
+    out = []
+    for lg in legs:
+        t = lg.get("market_synced_utc")
+        if lg.get("market_prob") is None or not t:
+            continue
+        age = (now - pd.Timestamp(t).to_pydatetime()).total_seconds() / 3600
+        if age > STALE_MARKET_HOURS:
+            out.append(f"market: leg {lg.get('leg')} price from {lg['market_exchange']} as of {t}, {age:.0f} h old: "
+                       "may be out of sync")
+    return out
+
+
 def _market(db, leg):
     """(chosen quote or None, [every linked exchange's quote]) for the leg's YES, sides applied."""
     from racinglines.markets import store
@@ -341,6 +374,12 @@ def _market(db, leg):
             link = dict(link, synced_at=db.asof)
         else:
             tape = store.last_before(db.conn, [link["token_id"]], datetime.now(timezone.utc))
+            book = _latest_book(db, link["token_id"])
+            synced = None if pd.isna(link["synced_at"]) else pd.Timestamp(link["synced_at"])
+            if book is not None and (synced is None or book["ts"] > synced):
+                # the recorder's book is newer than the link's last sync (hourly): price from it, so a market whose
+                # sync is days old but whose book is minutes old isn't shown at the sync's price
+                link = dict(link, last_bid=book["best_bid"], last_ask=book["best_ask"], synced_at=book["ts"])
             px, bid, ask = _quote_prob(link, tape)
         if px is None:
             continue
@@ -467,6 +506,8 @@ def price_book(conn, book, runs=None, sims=None, _db=None, asof=None):
             flags += f
             methods.append(how)
             pm = None if p is None or pm is None else pm * p
+        if db.asof is None:
+            flags += _stale_flags(legs)
         mk = [lg["market_prob"] for lg in legs]
         pk = None if any(x is None for x in mk) else float(pd.Series(mk).prod())
         same = any(len(g) > 1 for g in groups.values())

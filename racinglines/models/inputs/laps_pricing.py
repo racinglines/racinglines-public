@@ -283,6 +283,9 @@ def history(meas, use_track=True):
         if meas.races is not None:
             e["disrupted"] = bool(meas.races.set_index("event_id")["disrupted"].get(ev.event_id, False))
         rows.append(e)
+    if not rows:
+        raise ValueError("no completed F1 race with qualifying in the database to train on: load them with "
+                         "`racinglines data fetch f1` then `racinglines data ingest f1`, or add --demo for the demo store")
     out = pd.concat(rows, ignore_index=True)
     out.attrs["practice_train"] = ptrain
     return out

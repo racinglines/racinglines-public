@@ -33,9 +33,9 @@ from racinglines.web.ranges import UI_RANGES
 
 F1_SLOT = "f1:polymarket"
 PRE = "pre-weekend"
-# what a pro account picks from on the classic page, in this order (TAKER_TOP is ranked); no makers while
-# profiles.MAKERS_OPEN is off
-PRO_CODES = PF.open_codes((*PF.TAKER_TOP, "TB", "C"))
+# what a pro account picks from on the classic page, in this order (TAKER_TOP is ranked), maker C included
+# (owner, 2026-10-12 05:11Z: "include maker strategies, we will see how it goes")
+PRO_CODES = (*PF.TAKER_TOP, "TB", "C")
 # The settings a user may move, per kind of strategy: (setting, label, low, high, step, unit), the range from the web
 # forms' caps (web/ranges.py: what has been backtested). Probabilities show as points (x100). Anything else stays as
 # the strategy has it.

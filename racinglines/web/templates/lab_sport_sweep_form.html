@@ -4,7 +4,7 @@
   <div><h3>{{ jt.label }}</h3><div class="when">{{ jt.what }} · {{ jt.minutes }}</div></div>
   <p class="legend">This runs a historical simulation, not a live strategy. It saves a season sweep that appears in Edge Finder, where you can compare each strategy's P&amp;L by weekend.</p>
   <div class="jobform"><label><span>Season</span><select name="year">{% for y in ("2026", "2025") %}<option {{ 'selected' if y == sweep_form.year|string }}>{{ y }}</option>{% endfor %}</select></label></div>
-  {% set essential = ["variant", "venue", "min_edge", "max_stake"] + (["max_disagree"] if makers_on() else []) %}
+  {% set essential = ["variant", "venue", "min_edge", "max_stake", "max_disagree"] %}
   {% macro field(s) %}{% set v = sweep_form.start.get(s.name) %}
     <label title="{{ s.help }}"><span>{{ s.label }}</span>
     {% if s.type == 'bool' %}<span class="check"><input type="hidden" name="{{ s.name }}" value="false"><input type="checkbox" name="{{ s.name }}" value="true" {{ 'checked' if v }}> on</span>
@@ -17,7 +17,7 @@
   {% if mains %}<div class="jobform main-settings">{% for s in mains %}{{ field(s) }}{% endfor %}</div>{% endif %}
   <details class="more"><summary>All settings</summary>
   {% for g, glabel, items in sweep_form.groups %}
-  <fieldset class="settings-group"{% if g == "maker" and not makers_on() %} hidden{% endif %}><legend>{{ glabel }}</legend><div class="jobform">
+  <fieldset class="settings-group"><legend>{{ glabel }}</legend><div class="jobform">
   {% for s in items if s.name not in essential %}{{ field(s) }}{% endfor %}</div></fieldset>
   {% endfor %}
   </details>

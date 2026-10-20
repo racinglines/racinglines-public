@@ -116,6 +116,21 @@ def _sweep_argv(p):
             "--no-fetch", "--save", *st.argv()]
 
 
+# the event diagnostic's settings knob: the model group, less the settings that are its own knobs (sims, half-life,
+# track, calibration power)
+DIAGNOSTIC_SETTINGS = tuple(s.name for s in SS.SETTINGS if s.group == "model"
+                            and s.name not in ("sims", "calib_power", "half_life_days", "track_features"))
+
+
+def _diagnostic_settings_argv(p):
+    """The event diagnostic's model settings (the model group only; sims and calib_power are its own knobs)."""
+    st = SS.Settings.from_dict(p.get("settings") or {})
+    own = {"sims", "calib_power"}
+    keep = SS.Settings.from_dict({k: v for k, v in st.changed().items()
+                                  if SS.Settings.BY[k].group == "model" and k not in own})
+    return keep.argv() + (["--variant", keep["variant"]] if keep["variant"] != "baseline" else [])
+
+
 def _sport_sweep_argv(sport):
     def argv(p, out):
         from racinglines.pipelines import season_sweep as SW
@@ -221,10 +236,12 @@ CATALOG = {j.code: j for j in [
     JobType("f1_diagnostic", "f1", "Event diagnostic", "Price one past race as of a cutoff (e.g. the evening before), "
             "then compare with Polymarket at that time and the result.",
             [Knob("event", "Event", "event"), Knob("cutoff", "As of (UTC)", "datetime"), HALF_LIFE,
-             _sims(10000), F1_TRACK, CALIB],
+             _sims(10000), F1_TRACK, CALIB,
+             Knob("settings", "Model settings", "sweep_settings", None, choices=DIAGNOSTIC_SETTINGS,
+                  help="the sweep's model settings; unchanged ones keep their defaults")],
             lambda p, out: _f1_common(p, "diagnostic") + ["--event", p["event"], "--cutoff", p["cutoff"],
                                             "--sims", str(p["sims"]), "--save"]
-            + (["--no-track"] if p["track"] == "off" else []),
+            + (["--no-track"] if p["track"] == "off" else []) + _diagnostic_settings_argv(p),
             "~1 min", venues=("polymarket",)),
     JobType("f1_combo", "f1", "Combo (same-game parlay) prices", "Price one event (past or upcoming) once as of a "
             "cutoff and read each combo's fair value from the same simulations, with every leg's marginal, their "
@@ -325,7 +342,9 @@ def parse(job_type, form):
                 from racinglines.pipelines import season_sweep as SW
 
                 settings_cls = SW.settings_class(job_type.sport)
-            out[k.name] = parse_sweep_settings(form, settings_cls)
+            own = {kn.name for kn in job_type.knobs}            # a job's own knob (the diagnostic's sims) wins
+            out[k.name] = {n: v for n, v in parse_sweep_settings(form, settings_cls).items()
+                           if n not in own and (not k.choices or n in k.choices)}   # only the ones it takes
             continue
         raw = (form.get(k.name) or "").strip()
         if raw == "" and k.default is not None:

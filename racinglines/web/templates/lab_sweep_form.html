@@ -1,4 +1,5 @@
 {# The Edge Finder sweep: every setting of racinglines/pipelines/sweep_settings.py, grouped. #}
+{% from "lab_setting_field.html" import field with context %}
 <form method="post" action="/lab/run" class="ecard sweep-form{{ " sel" if sel_job == jt.code }}" id="sweep-form"
       data-defaults='{{ sweep_defaults|tojson }}' data-source='{{ sweep_start|tojson }}'>{{ csrf() }}<input type="hidden" name="job" value="{{ jt.code }}">
   <div><h3>{{ jt.label }}</h3><div class="when">{{ jt.what }} · {{ jt.minutes }}</div></div>
@@ -11,27 +12,12 @@
     <label><span>Season</span><select name="year">{% for y in ["2026", "2025"] %}<option {{ 'selected' if y == (knobs.get('f1_sweep', {}).get('year') or '2026')|string }}>{{ y }}</option>{% endfor %}</select></label>
   </div>
   {# The main settings first; every other one under "All settings" (closed, still submitted). #}
-  {% set essential = ["variant", "venue", "min_edge", "max_stake"] + (["max_disagree"] if makers_on() else []) %}
-  {% macro field(s) %}{% set v = sweep_start.get(s.name) %}
-    <label title="{{ s.help }}" data-setting="{{ s.name }}"><span>{{ s.label }}</span>
-    {% if s.name == 'variant' %}<input name="variant" value="{{ v }}" list="variant-choices" maxlength="80" autocomplete="off" data-variant-text>
-      <datalist id="variant-choices">{% for m in model_choices %}<option value="{{ m }}">{% endfor %}</datalist>
-      {# the switches of models/variants.py as checkboxes; app.js joins the ticked ones into the field above
-         (in this order, so a combination keeps the name its stored stages are keyed by) #}
-      <span class="checks variant-switches">{% for sw, why in variant_switches %}<label class="inline" title="{{ why }}"><input type="checkbox" data-switch="{{ sw }}"{% if sw in exclusive_switches %} data-exclusive="{{ exclusive_switches|join(' ') }}"{% endif %}> {{ sw }}</label>{% endfor %}</span>
-    {% elif s.type == 'bool' %}<span class="check"><input type="hidden" name="{{ s.name }}" value="false"><input type="checkbox" name="{{ s.name }}" value="true" {{ 'checked' if v }}> on</span>
-    {% elif s.type == 'map' %}<input name="{{ s.name }}" value="{{ v or '' }}" placeholder="not set, e.g. race_h2h=0.05" maxlength="200" autocomplete="off">
-    {% elif s.type == 'choice' %}<select name="{{ s.name }}">{% for ch in s.choices %}<option {{ 'selected' if ch == v }}>{{ ch }}</option>{% endfor %}</select>
-    {% elif s.type == 'multi' %}<input type="hidden" name="{{ s.name }}__present" value="1"><span class="checks">{% for ch in s.choices %}<label class="inline"><input type="checkbox" name="{{ s.name }}" value="{{ ch }}" {{ 'checked' if ch in v }}> {{ ch|replace('after ', '')|kind }}</label>{% endfor %}</span>
-    {% elif s.name == 'calib_power' %}<input name="calib_power" value="{{ v or '' }}" list="calib-choices" placeholder="not set, e.g. walk_forward or 2.0" maxlength="20" autocomplete="off">
-      <datalist id="calib-choices"><option value="walk_forward"></datalist>
-    {% else %}<input name="{{ s.name }}" type="number" value="{{ '' if v is none else v }}" {% set r = ui_range(s.name, v, s.min, s.max) %}min="{{ r[0] }}" max="{{ r[1] }}" step="{{ '1' if s.type == 'int' else 'any' }}"{% if s.default is none %} placeholder="not set"{% endif %}>{% endif %}
-    </label>{% endmacro %}
-  <div class="jobform main-settings">{% for g, glabel, items in sweep_groups %}{% for s in items if s.name in essential %}{{ field(s) }}{% endfor %}{% endfor %}</div>
+  {% set essential = ["variant", "venue", "min_edge", "max_stake", "max_disagree"] %}
+  <div class="jobform main-settings">{% for g, glabel, items in sweep_groups %}{% for s in items if s.name in essential %}{{ field(s, sweep_start.get(s.name)) }}{% endfor %}{% endfor %}</div>
   <details class="more"><summary>All settings <span class="muted" data-changed-count></span></summary>
   {% for g, glabel, items in sweep_groups %}
-  <fieldset class="settings-group"{% if g == "maker" and not makers_on() %} hidden{% endif %}><legend>{{ glabel }}</legend><div class="jobform">
-  {% for s in items if s.name not in essential %}{{ field(s) }}{% endfor %}</div></fieldset>
+  <fieldset class="settings-group"><legend>{{ glabel }}</legend><div class="jobform">
+  {% for s in items if s.name not in essential %}{{ field(s, sweep_start.get(s.name)) }}{% endfor %}</div></fieldset>
   {% endfor %}
   </details>
   <div><button class="primary">Run sweep</button>

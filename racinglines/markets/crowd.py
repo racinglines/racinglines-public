@@ -1,7 +1,6 @@
 """
 The private book's crowd: anonymous simulated takers trading against a maker's quotes, shared by every
-live sport (pipelines/live.py). Moved out of pipelines/live_dh.py, which imports it back under its old
-names; the downhill numbers are unchanged.
+live sport (pipelines/live.py). Moved out of pipelines/live_dh.py; the downhill numbers are unchanged.
 
 A market is identified by its key: a quote's "key", else "<bib>:<market>" (downhill). The book:
 

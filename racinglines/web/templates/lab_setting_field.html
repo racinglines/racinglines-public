@@ -1,0 +1,18 @@
+{# One sweep setting (racinglines/pipelines/sweep_settings.py) as a form field, shared by the Edge Finder sweep form
+   and any job whose `settings` knob takes sweep settings (the event diagnostic's model settings). `v` is the value
+   to show. Booleans post a hidden "false" before the checkbox; multi-choice settings post a __present marker. #}
+{% macro field(s, v) %}
+    <label title="{{ s.help }}" data-setting="{{ s.name }}"><span>{{ s.label }}</span>
+    {% if s.name == 'variant' %}<input name="variant" value="{{ v }}" list="variant-choices" maxlength="80" autocomplete="off" data-variant-text>
+      <datalist id="variant-choices">{% for m in model_choices %}<option value="{{ m }}">{% endfor %}</datalist>
+      {# the switches of models/variants.py as checkboxes; app.js joins the ticked ones into the field above
+         (in this order, so a combination keeps the name its stored stages are keyed by) #}
+      <span class="checks variant-switches">{% for sw, why in variant_switches %}<label class="inline" title="{{ why }}"><input type="checkbox" data-switch="{{ sw }}"{% if sw in exclusive_switches %} data-exclusive="{{ exclusive_switches|join(' ') }}"{% endif %}> {{ sw }}</label>{% endfor %}</span>
+    {% elif s.type == 'bool' %}<span class="check"><input type="hidden" name="{{ s.name }}" value="false"><input type="checkbox" name="{{ s.name }}" value="true" {{ 'checked' if v }}> on</span>
+    {% elif s.type == 'map' %}<input name="{{ s.name }}" value="{{ v or '' }}" placeholder="not set, e.g. race_h2h=0.05" maxlength="200" autocomplete="off">
+    {% elif s.type == 'choice' %}<select name="{{ s.name }}">{% for ch in s.choices %}<option {{ 'selected' if ch == v }}>{{ ch }}</option>{% endfor %}</select>
+    {% elif s.type == 'multi' %}<input type="hidden" name="{{ s.name }}__present" value="1"><span class="checks">{% for ch in s.choices %}<label class="inline"><input type="checkbox" name="{{ s.name }}" value="{{ ch }}" {{ 'checked' if ch in v }}> {{ ch|replace('after ', '')|kind }}</label>{% endfor %}</span>
+    {% elif s.name == 'calib_power' %}<input name="calib_power" value="{{ v or '' }}" list="calib-choices" placeholder="not set, e.g. walk_forward or 2.0" maxlength="20" autocomplete="off">
+      <datalist id="calib-choices"><option value="walk_forward"></datalist>
+    {% else %}<input name="{{ s.name }}" type="number" value="{{ '' if v is none else v }}" {% set r = ui_range(s.name, v, s.min, s.max) %}min="{{ r[0] }}" max="{{ r[1] }}" step="{{ '1' if s.type == 'int' else 'any' }}"{% if s.default is none %} placeholder="not set"{% endif %}>{% endif %}
+    </label>{% endmacro %}

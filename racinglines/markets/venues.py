@@ -4,7 +4,7 @@ One standard shape for markets, across sports, time and venues.
     event (a race, or a competition's season)
       └─ outcome   (kind, subject[, opponent / team / n])   e.g. race_win · George Russell
            ├─ our fair value      (live forecast, or the last as-of price for a past race)
-           ├─ venue quotes         Polymarket · Kalshi (soon) · our private book
+           ├─ venue quotes         Polymarket · Kalshi · our private book
            └─ result               (once the race has run)
 
 `event_matrix` and `season_matrix` return one row per outcome with a column group

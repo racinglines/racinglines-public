@@ -1,6 +1,6 @@
 """The laps core of the one engine (racinglines/models/model_global.py, docs/backtest-core.md): the pricing core of a
 sport whose schema declares lap-level data ([model] inputs with "results", "qualifying", "grid" and "laps"; "sectors"
-and "practice" optional). It is the F1 engine that was race_model.PositionSim, moved here unchanged (decision log
+and "practice" optional). It is the F1 engine before the one engine, moved here unchanged (decision log
 2026-10-11 "One engine"): one event per race, priced as of one minute before the start (qualifying known) through
 laps_pricing.price_race, the as-of view of Measurements being the only data it sees. The season sweep prices every
 stage through the same price_race.
@@ -64,7 +64,11 @@ class LapsCore:
             return SimpleNamespace(meas=data, hist=run.history(data, settings["track_features"]))
 
     def price(self, hist, ev, settings, rng):
+        from racinglines.models.inputs import laps as M
         from racinglines.models.inputs import laps_pricing as run
+        h = hist.hist
+        if not ((h["r_ts"] + M.RACE_DONE < ev.cutoff) & (h["status"] == "OK")).any():
+            return None             # no finished race before it to train on (the store's first season): not priced
         with settings.applied():
             _, ex = run.price_race(hist.meas, hist.hist, ev.cutoff, ev.id, n_sims=settings["sims"], rng=rng,
                                    use_track=settings["track_features"])

@@ -4,6 +4,10 @@
 <h1>racinglines</h1>
 <p class="sub">Fair prices and market making for race sports.</p>
 <div class="card signup-form">
+  {% if not support %}
+  <p><b>Forgot your password?</b> Ask this app's admin for a new one-time password
+  (<code>racinglines users reset-password USERNAME</code>).</p>
+  {% else %}
   <p><b>Forgot your password?</b> Send us a reset request, from the email on your account if it has one (older
   accounts don't), and we'll reply with a temporary password.</p>
   <label><span>Your username</span><input id="forgot-user" autocomplete="username" maxlength="30"></label>
@@ -20,6 +24,7 @@ Thanks</textarea>
   <p class="mt"><a id="forgot-send" class="button primary" href="mailto:{{ support }}?subject=Password%20reset%20request">Open in my email app</a>
   <button type="button" data-copy="#forgot-email" data-copied="#forgot-copied" data-copied-text="Copied.">Copy email</button> <span id="forgot-copied" class="muted"></span></p>
   <p class="hint">Or write to <b>{{ support }}</b> yourself with your username. We never ask for your password.</p>
+  {% endif %}
 </div>
 <p class="confused"><a href="/signin">Back to sign in</a></p>
 

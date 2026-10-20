@@ -17,7 +17,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="racinglines check", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     from racinglines.cli import present
-    offered = ["f1"] + (["mtb_dh"] if present("cli.mtb_dh") else [])     # the public release has f1 only
+    offered = ["f1"] + (["mtb_dh"] if present("cli.mtb_dh") else [])     # offered when installed
     ap.add_argument("--sport", choices=offered, action="append", help="Default: every one offered.")
     ap.add_argument("--offline", action="store_true", help="Skip the data-endpoint checks.")
     ap.add_argument("--no-db", action="store_true", help="Skip the database check.")

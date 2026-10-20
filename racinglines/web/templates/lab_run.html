@@ -21,10 +21,12 @@
 <form method="post" action="/lab/run" class="ecard{{ " sel" if sel_job == jt.code }}">{{ csrf() }}<input type="hidden" name="job" value="{{ jt.code }}">
   <div><h3>{{ jt.label }}</h3><div class="when">{{ jt.what }}{% if jt.minutes %} · {{ jt.minutes }}{% endif %}</div></div>
   {% set mine = knobs.get(jt.code, {}) %}
-  {% set main = jt.knobs|selectattr("type", "in", ["event", "datetime", "legs"])|list + (jt.knobs|rejectattr("type", "in", ["event", "datetime", "legs"])|list)[:3] %}
-  <div class="jobform">{% for k in jt.knobs if k in main %}{{ knob(k, mine.get(k.name, k.default)) }}{% endfor %}</div>
-  {% if jt.knobs|length > main|length %}<details class="more"><summary>More settings ({{ jt.knobs|length - main|length }})</summary>
-  <div class="jobform">{% for k in jt.knobs if k not in main %}{{ knob(k, mine.get(k.name, k.default)) }}{% endfor %}</div></details>{% endif %}
+  {% set shown = jt.knobs|rejectattr("type", "equalto", "sweep_settings")|list %}{# the settings knob draws its own fold below #}
+  {% set main = shown|selectattr("type", "in", ["event", "datetime", "legs"])|list + (shown|rejectattr("type", "in", ["event", "datetime", "legs"])|list)[:3] %}
+  <div class="jobform">{% for k in shown if k in main %}{{ knob(k, mine.get(k.name, k.default)) }}{% endfor %}</div>
+  {% if shown|length > main|length %}<details class="more"><summary>More settings ({{ shown|length - main|length }})</summary>
+  <div class="jobform">{% for k in shown if k not in main %}{{ knob(k, mine.get(k.name, k.default)) }}{% endfor %}</div></details>{% endif %}
+  {% for k in jt.knobs if k.type == "sweep_settings" %}{% set vals = mine.get(k.name) or {} %}{% include "lab_job_settings.html" %}{% endfor %}
   <div><button class="primary">Run</button></div>
 </form>{% endif %}</div>{% endfor %}</div></section>{% endfor %}
 <p class="legend">Forms start from the settings you last ran with. Strategy knobs (spread, size, inventory and capital limits, filters, fill rule) replay instantly on an event's real Polymarket tape: open an <a href="#diagnostics" data-open="diagnostics">event diagnostic</a>.</p>

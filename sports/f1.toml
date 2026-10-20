@@ -8,9 +8,6 @@ name = "Formula 1"
 result_kind = "position"          # results are finishing positions
 model_family = "global"           # the one engine (racinglines/models/model_global.py), with [model] below
 pricing_model = "racinglines.models.model_global:GlobalModel"   # every modelled sport's (docs/backtest-core.md)
-# F1's engine before the one engine, kept runnable for comparisons (`racinglines backtest walk-forward f1 --model
-# f1_sector_sim`): the same laps core and settings, so its prices equal the engine's (tests/test_one_engine.py)
-challengers = { f1_sector_sim = "racinglines.models.race_model:PositionSim" }
 display_order = 0
 results_modules = ["racinglines.sources.fastf1"]   # what fetches its results (`backtest coverage`)
 
@@ -26,7 +23,7 @@ categories = { DRV = ["Drivers", "X", "elite"] }
 
 [model]
 # The one engine's inputs (racinglines/models/inputs/__init__.py): they pick the laps core (models/inputs/laps_core.py,
-# the F1 engine that was race_model.PositionSim) and the layers it reads: lap pace and the finishing model
+# the F1 engine before the one engine) and the layers it reads: lap pace and the finishing model
 # (inputs/laps.py), the car's sector fit (sectors: setting track_features), the practice prior (inputs/practice.py:
 # practice_prior), the qualifying order as the grid, moved by confirmed penalties (inputs/grid.py). Decision log
 # 2026-10-11 "One engine" (provisional, staging only): every price as before.

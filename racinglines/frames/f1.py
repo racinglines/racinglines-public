@@ -1,5 +1,5 @@
 """
-F1 frames (L1, docs/frames.md), built from `Measurements`: the data object `PositionSim.load` returns. Read-only
+F1 frames (L1, docs/frames.md), built from `Measurements`: the data object the F1 engine's `load` returns. Read-only
 views over what the model already holds: no database query, and nothing about how the model loads or prices changes.
 
     entrants          the model's own entry list per event (pricing.entry_list: the qualifying classification, the

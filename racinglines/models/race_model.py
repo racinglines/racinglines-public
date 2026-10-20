@@ -14,15 +14,12 @@ search and, later, the venues.
 `price` must only read data from before `ev.cutoff`; `results` is read only after pricing, to settle.
 Adding a sport means its schema (sports/<code>.toml: [model] inputs, defaults): no engine changes.
 
-PositionSim and TimedRuns are the engines F1 and downhill had before the one engine, kept runnable as [sport]
-challengers (`backtest walk-forward SPORT --model f1_sector_sim`): each is the core the engine now uses for those
-inputs, with that sport's code-level settings, so its prices equal the engine's (tests/test_one_engine.py).
+F1's and downhill's engines before the one engine (PositionSim, TimedRuns) were retired on 2026-10-19: they were the
+laps and run-times cores the engine already uses for those inputs, so they priced the same (decision log 2026-10-19).
 """
 
 from dataclasses import dataclass, field
 
-from racinglines.models.inputs.laps_core import LapsCore
-from racinglines.models.inputs.run_times.core import RunTimesCore
 
 
 @dataclass(frozen=True)
@@ -34,24 +31,9 @@ class Event:
     info: dict = field(default_factory=dict, compare=False)   # model-specific (e.g. the start list, format)
 
 
-class TimedRuns(RunTimesCore):
-    """Challenger: downhill's engine before the one engine (the run-times core with DHSettings' code defaults)."""
-
-    sport = "mtb_dh"
-    name = "timed_runs"                  # model_runs.model
-    competition = "uci_dhi_wc"
-
-
-class PositionSim(LapsCore):
-    """Challenger: F1's engine before the one engine (the laps core with sweep_settings.Settings' code defaults)."""
-
-    sport = "f1"
-    name = "f1_sector_sim"
-
-
 def bind(cls, sport):
     """The engine (models/model_global) is bound to the sport's schema by its `for_sport`; any other class (a
-    challenger such as PositionSim, a test's toy model) is returned as it is."""
+    challenger, a test's toy model) is returned as it is."""
     return cls.for_sport(sport) if hasattr(cls, "for_sport") else cls
 
 

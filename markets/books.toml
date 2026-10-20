@@ -1,0 +1,39 @@
+# Sportsbook bet sizing and rendering settings for `racinglines book render` (racinglines/books/render.py,
+# docs/sportsbook/render.md). Data, not code: the rule is the same function for every sport and venue, and each value
+# here can be overridden on the command line (--bank --kelly --cap --min-ev --scale --drop-under). A change to a value
+# here is a tuned setting: it needs a row in the decision log of docs/sportsbook/render.md first.
+
+[stake]
+# The v2 rule (owner, 2026-10-09): bet only when the EV clears `min_ev` against EVERY probability named in `require`;
+# size `kelly` x Kelly on the lowest of those probabilities on a `bank`; every bet at least `floor`; the event's total
+# scaled down to `cap` (per venue per event: one book file). Then the owner's nominal sizing: every stake times
+# `scale`, and a stake under `drop_under` after that dropped (`--scale 0.1 --drop-under 0.50`).
+require = ["model", "market"]
+min_ev = 0.05
+kelly = 0.5
+bank = 1000.0
+floor = 1.0
+cap = 100.0
+scale = 1.0
+drop_under = 0.0
+
+[market]
+# The market price the rule uses: the tightest linked exchange quote with both a bid and an ask and ask - bid <= this
+# (a wider book's mid means little). A slip's market price is the product of its legs' prices.
+max_spread = 0.20
+
+[agnostic]
+# The book-agnostic graphic: an exchange tick only where the quote is two-sided and ask - bid <= max_spread; the
+# minimum decimal odds worth taking = margin / min(model, every tight mid) (the model alone when no mid is tight).
+max_spread = 0.10
+margin = 1.05
+
+[render]
+# Device pixel ratio of the PNG per style: the screenshot overlay stays at the screenshot's own pixels.
+dpr = { hud = 1, card = 2, agnostic = 2 }
+side_panel_px = 460
+
+[render.exchanges]
+polymarket = { name = "Polymarket", color = "#c792ff" }
+kalshi = { name = "Kalshi", color = "#3ddc97" }
+og = { name = "OG.com", color = "#ff8f6b" }

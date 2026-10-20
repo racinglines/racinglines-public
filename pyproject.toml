@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "racinglines"
-version = "1.0.1"
+version = "1.0.2rc1"
 description = "Fair prices for Formula 1 prediction markets, and the tools to test trading strategies against them"
 license = "MIT"                    # plain MIT on PyPI; the public export ships the plain MIT LICENSE
 license-files = ["LICENSE"]
@@ -15,11 +15,15 @@ requires-python = ">=3.11"
 dependencies = ["rich>=13", "numpy>=2", "pandas>=2.2", "scikit-learn>=1.5", "SQLAlchemy>=2"]
 
 [project.optional-dependencies]
-# pip install racinglines[web]: everything the public release runs: a local database, the kart demo store, the live
-# book and its reports, the web app and its live viewer, F1 timing (FastF1) and the downhill sim's ChronoRace results
-web = ["psycopg[binary]>=3.2", "alembic>=1.13", "fastapi>=0.115", "uvicorn[standard]>=0.30", "python-multipart>=0.0.9",
-       "Jinja2>=3.1", "httpx>=0.27", "pyarrow>=16", "Markdown>=3.6", "matplotlib>=3.8", "fastf1>=3.4", "pandas<3",
-       "requests>=2.31", "beautifulsoup4>=4.12", "lxml>=5"]
+# pip install racinglines[db]: everything that runs without the web app (owner, 19 Oct: [web] comes last, with its
+# notice): a local database, the kart demo store, backtests and forecasts, the live book and its reports, sportsbook
+# pricing, F1 timing (FastF1) and the downhill sim's ChronoRace results
+db = ["psycopg[binary]>=3.2", "alembic>=1.13", "httpx>=0.27", "pyarrow>=16", "Markdown>=3.6", "matplotlib>=3.8",
+      "fastf1>=3.4", "pandas<3", "requests>=2.31", "beautifulsoup4>=4.12", "lxml>=5"]
+# pip install racinglines[mcp]: [db] plus the MCP server (racinglines mcp) and the hosted-server client (racinglines remote)
+mcp = ["racinglines[db]", "mcp>=2.2,<3"]
+# pip install racinglines[web]: [db] plus the web app and its live viewer
+web = ["racinglines[db]", "fastapi>=0.115", "uvicorn[standard]>=0.30", "python-multipart>=0.0.9", "Jinja2>=3.1"]
 
 [project.scripts]
 racinglines = "racinglines.cli:main"
@@ -29,4 +33,5 @@ racinglines = "racinglines.cli:main"
 Homepage = "https://racinglines.bet"
 Documentation = "https://racinglines.bet/docs"
 Quickstart = "https://racinglines.bet/term"
+Source = "https://github.com/racinglines/racinglines-public"
 Changelog = "https://github.com/racinglines/racinglines-public/blob/main/CHANGELOG.md"

@@ -33,7 +33,7 @@ to the displayed size when a later snapshot shows less (cancellations). Without 
 snapshot from the last `book_max_age_min`, the quote falls back to "through".
 
 Known limits (Baku test case): our quotes don't change what takers would have done;
-competing makers are only what the recorded books show (top 10 levels, once a minute).
+competing makers are only what the recorded books show (top 10 levels, every 5 minutes).
 """
 
 import math

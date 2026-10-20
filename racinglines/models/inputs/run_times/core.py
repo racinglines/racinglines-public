@@ -1,6 +1,6 @@
 """The run-times core of the one engine (racinglines/models/model_global.py, docs/backtest-core.md): the pricing core
 of a sport whose schema declares timed runs ([model] inputs with "run_times"; "practice" optional: the timed training
-runs, at the schema's [rounds] run_weights practice weight). It is the downhill engine that was race_model.TimedRuns,
+runs, at the schema's [rounds] run_weights practice weight). It is the downhill engine before the one engine,
 moved here unchanged (decision log 2026-10-11 "One engine"): one event per race weekend, priced from every run before
 it with its actual start list and format, as walk_forward_season does.
 """

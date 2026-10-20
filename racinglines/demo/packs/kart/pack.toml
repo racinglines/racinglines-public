@@ -46,8 +46,8 @@ mcp_url = "https://mcp-demo.racinglines.bet/mcp"
 # `record = false`, which tools show but never run (the /term recorder types it without output; the tests skip it).
 [[quickstart]]
 title = "📦 Install racinglines"
-run = "pip install -r requirements.txt && pip install -e ."
-about = "From a clone of the repository, in a virtualenv with Python 3.11+: the dependencies and the `racinglines` command."
+run = 'pip install "racinglines[db]"'
+about = "In a virtualenv with Python 3.11+: the package with its database extra (from a clone of racinglines-public, `pip install -e \".[web]\"`)."
 record = false
 
 [[quickstart]]

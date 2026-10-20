@@ -286,7 +286,7 @@ def refresh_fastf1(w, echo=print):
     for argv in (["fetch", "f1", "--years", str(year), "--rounds", str(rnd), "--sessions", FASTF1_SESSIONS],
                  ["ingest", "f1", "--years", str(year)]):
         r = subprocess.run(rl + argv, capture_output=True, text=True, timeout=1800)
-        echo(f"  f1 {argv[0]}: {'ok' if r.returncode == 0 else 'failed'} {r.stdout.strip().splitlines()[-1:] or ''}")
+        echo(f"  f1 {argv[0]}: {'ok' if r.returncode == 0 else 'failed'} {(r.stdout.strip().splitlines() or [''])[-1]}")
 
 
 def refresh_markets(engine, engine_url, w, now, echo=print, venue="polymarket"):
@@ -712,11 +712,6 @@ def run_all(engine, engine_url, users=None, profile_ref=None, now=None, event="n
     with engine.connect() as c:
         targets = [(uid, prof) for uid, name, _, prof in PF.assigned(c, venue=venue) if not users or name in users]
         names = {uid: name for uid, name, _, _ in PF.assigned(c, venue=venue)}
-        if not PF.MAKERS_OPEN:                 # Alpha: makers run only for the demo accounts (profiles.MAKERS_OPEN)
-            skipped = [names[uid] for uid, prof in targets if PF.is_maker(prof) and names[uid] not in PF.DEMO]
-            if skipped:
-                echo(f"maker strategies are closed for Alpha: skipped {', '.join(skipped)}")
-            targets = [(uid, prof) for uid, prof in targets if not PF.is_maker(prof) or names[uid] in PF.DEMO]
         if profile_ref is not None:            # this profile instead of the users' own
             prof = PF.load(c, profile_ref)
             targets = [(uid, prof) for uid, _ in targets]
@@ -810,12 +805,15 @@ NOW_STAGE = "now"                         # sweep_stage of an as-of-now pricing 
 def call(profile, kind, fair, price, volume_24h=None):
     """What a taker profile would do in one market at `price`: dict(action, side, shares, limit, heat,
     why). Same rule as the backtest taker (sizing.target_shares, the h2h threshold, the price band and
-    the volume filter). Never returns the fair value or edge (takers don't see them)."""
+    the volume filter) and the live pass's venue costs (taker_params: the profile venue's cost per share and taker
+    fee). Never returns the fair value or edge (takers don't see them)."""
     from racinglines.markets.strategies.sizing import target_shares
     st = SS.Settings.from_dict(profile["settings"], strict=False)
+    venue = SS.venue_of(st)
     p = RB.TakerParams(min_edge=st["min_edge"], stake_per_edge=st["stake_per_edge"], max_stake=st["max_stake"],
-                       cost=st["cost"], min_edge_h2h=st["min_edge_h2h"],
-                       min_edge_by_kind=tuple(SS.parse_map(st["min_edge_by_kind"]).items()))
+                       cost=WS.taker_cost(st["cost"], venue), min_edge_h2h=st["min_edge_h2h"],
+                       min_edge_by_kind=tuple(SS.parse_map(st["min_edge_by_kind"]).items()),
+                       taker_fee=WS.taker_fee(venue))
     p = RB.params_for(kind, p)
     if kind not in st["market_kinds"]:
         return dict(action=None, why="not a market this strategy trades")
@@ -825,11 +823,13 @@ def call(profile, kind, fair, price, volume_24h=None):
         return dict(action=None, why="outside the price band")
     if volume_24h is not None and volume_24h < st["min_volume_24h"]:
         return dict(action=None, why="too thin to trade")
-    ty, tn = target_shares(fair, price, p.cost, p.min_edge, p.stake_per_edge, p.max_stake)
+    ty, tn = target_shares(fair, price, p.cost + p.taker_fee * price * (1 - price), p.min_edge, p.stake_per_edge,
+                           p.max_stake)                       # as taker_weekend sizes it at one price
     if ty <= 0 and tn <= 0:
         return dict(action=None, why="no edge")
     side, shares = ("YES", ty) if ty > 0 else ("NO", tn)
-    limit = (price if side == "YES" else 1 - price) + p.cost
+    px = price if side == "YES" else 1 - price
+    limit = px + p.cost + RB._fee(p.taker_fee, px, shares)   # what the live pass pays per share (its limit_price)
     return dict(action="buy", side=side, shares=shares, limit=limit, cost=shares * limit,
                 heat=heat("buy", side, shares, limit, fair), why=None)
 

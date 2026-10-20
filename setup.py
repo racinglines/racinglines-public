@@ -20,6 +20,7 @@ setup(
         "racinglines.weather": ["*.toml"],
         "racinglines.books": ["*.css"],
         "racinglines.tui": ["*.tcss"],
+        "racinglines.tui.model": ["README.md"],
         "racinglines.demo": ["packs/*/*.toml", "packs/*/files/**/*"],
         **{name: ["*.toml", "*.mako"] for name in bundled},
     },

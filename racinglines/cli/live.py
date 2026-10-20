@@ -408,14 +408,23 @@ def cmd_new(args):
 
 def plist(spec, root=None, exe=None):
     """The LaunchAgent for a spec: F1 steps every step_min minutes (StartInterval; the lock stops overlaps);
-    downhill runs the poll loop, restarted if it exits early (KeepAlive until the final is over)."""
-    root = str(root or paths.ROOT)
-    exe = exe or os.path.join(root, ".venv", "bin", "racinglines")
+    downhill runs the poll loop, restarted if it exits early (KeepAlive until the final is over).
+    From a checkout (or with `root`) it runs the checkout's .venv in the checkout; from an installed package, the installed
+    `racinglines` (else this Python's `-m racinglines`) in the data home, with the spec's absolute path."""
     run = spec["run"]
-    log = os.path.join(root, "data", "runs", "live", run, "agent.log")
-    rel = os.path.relpath(spec["path"], paths.ROOT) if os.path.isabs(spec["path"]) else spec["path"]   # as in the repo
     f1 = spec["sport"] == "f1"
-    args = [exe, "live", "step" if f1 else "run", rel]
+    if paths.CHECKOUT or root is not None:
+        root = str(root or paths.ROOT)
+        cmd = [exe or os.path.join(root, ".venv", "bin", "racinglines")]
+        log = os.path.join(root, "data", "runs", "live", run, "agent.log")
+        rel = os.path.relpath(spec["path"], paths.ROOT) if os.path.isabs(spec["path"]) else spec["path"]   # as in the repo
+    else:
+        import shutil
+        root = str(paths.HOME)
+        cmd = [exe] if exe else [shutil.which("racinglines")] if shutil.which("racinglines") else [sys.executable, "-m", "racinglines"]
+        log = str(paths.DATA / "runs" / "live" / run / "agent.log")
+        rel = os.path.abspath(spec["path"])
+    args = [*cmd, "live", "step" if f1 else "run", rel]
     sched = (f"  <key>StartInterval</key><integer>{int(spec['live']['poll'].get('step_min', 5)) * 60}</integer>\n" if f1 else
              "  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>\n")
     argx = "".join(f"<string>{a}</string>" for a in args)
@@ -450,6 +459,8 @@ def cmd_agent(args):
             os.remove(target)
         print(f"removed {label}")
         return 0
+    if not paths.CHECKOUT:
+        paths.HOME.mkdir(parents=True, exist_ok=True)       # the agent's working folder must exist
     local.write_text(plist(spec))
     print(f"wrote {paths.rel(local)}")
     if args.install:

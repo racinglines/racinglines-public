@@ -9,9 +9,8 @@ written to activity_log. Run with `racinglines web`.
 
 import contextvars
 import hashlib
+import importlib.util
 import hmac
-import json  # noqa: F401  (staging's F1 stream routes)
-import logging
 import os
 import re
 import secrets
@@ -19,8 +18,6 @@ import threading
 import time
 from urllib.parse import quote
 from pathlib import Path
-
-logger = logging.getLogger(__name__)
 
 import pandas as pd
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, status
@@ -51,7 +48,6 @@ HERE = Path(__file__).resolve().parent
 from contextlib import asynccontextmanager  # noqa: E402
 
 from racinglines.web import users as U  # noqa: E402
-from racinglines.pipelines import profiles as _PF  # noqa: E402
 from racinglines.web import ranges as _ranges  # noqa: E402
 from racinglines.web import roles as R  # noqa: E402
 from racinglines.web import layout as _layout  # noqa: E402
@@ -68,24 +64,34 @@ PUBLIC_EXACT = {"/", "/docs/quickstart/term", "/llms.txt", "/llms-full.txt"}  # 
 # failed-login throttle: per client IP, MAX_FAILURES within FAILURE_WINDOW seconds -> 429
 MAX_FAILURES = 8
 FAILURE_WINDOW = 15 * 60
+MAX_TRACKED = 10_000      # addresses kept at most: expired ones go first, then the longest-quiet
 _failures: dict[str, list[float]] = {}
 
 
 def client_ip(request):
-    """Real client address; behind a Cloudflare tunnel every request comes from localhost."""
-    return (request.headers.get("cf-connecting-ip")
-            or request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-            or (request.client.host if request.client else "unknown"))
+    """Real client address; behind a Cloudflare tunnel every request comes from localhost, so the tunnel's header
+    is trusted from loopback (or with RACINGLINES_TRUST_PROXY=1) only (users._ip)."""
+    return U._ip(request) or "unknown"
 
 
 def _throttled(ip):
     now = time.time()
-    _failures[ip] = [t for t in _failures.get(ip, []) if now - t < FAILURE_WINDOW]
-    return len(_failures[ip]) >= MAX_FAILURES
+    recent = [t for t in _failures.get(ip, []) if now - t < FAILURE_WINDOW]
+    if recent:
+        _failures[ip] = recent
+    else:
+        _failures.pop(ip, None)
+    return len(recent) >= MAX_FAILURES
 
 
 def _record_failure(ip):
-    _failures.setdefault(ip, []).append(time.time())
+    now = time.time()
+    if ip not in _failures and len(_failures) >= MAX_TRACKED:
+        for k in [k for k, ts in _failures.items() if not ts or now - ts[-1] >= FAILURE_WINDOW]:
+            del _failures[k]
+        while len(_failures) >= MAX_TRACKED:
+            del _failures[min(_failures, key=lambda k: _failures[k][-1])]
+    _failures.setdefault(ip, []).append(now)
 
 
 def _session_value(user_id, expires, sid=""):
@@ -162,6 +168,13 @@ def allow(*roles):
 
 
 ANY, PRO = R.ANY, R.PRO
+
+
+def need_mcp():
+    """A 404 for the MCP routes when racinglines.mcp is not installed (the public release leaves it out), instead of
+    an ImportError and a 500."""
+    if not present("mcp"):
+        raise HTTPException(404)
 
 
 def check_csrf(csrf_token: str = Form(...)):
@@ -287,7 +300,7 @@ templates.env.globals["ui_range"] = _ranges.ui_range                            
 from racinglines.fantasy import ledger as _FL  # noqa: E402
 templates.env.globals["fantasy_on"] = _FL.on                                    # /trade and /history (staging only)
 templates.env.globals["alpha_layout"] = _layout.alpha                           # the four-tab alpha bar (web/layout.py)
-templates.env.globals["makers_on"] = lambda: _PF.MAKERS_OPEN                   # on from 2026-10-12 (profiles.MAKERS_OPEN)
+templates.env.globals["pitch_on"] = lambda: (ROOT / "pitch.html").exists()      # /pitch serves it; the public release has no deck
 # the stylesheet's and scripts' URLs carry the newest static file's mtime, so a change is a new URL: no stale copy from the browser or
 # Cloudflare's edge cache (read at render time)
 templates.env.globals["css_v"] = lambda: int(max(p.stat().st_mtime for p in (HERE / "static").glob("*.*")))
@@ -417,7 +430,7 @@ SITE = ROOT / "site"     # the built docs (mkdocs build -d site; the pre-push ho
 # Login / logout
 # ---------------------------------------------------------------------------
 
-LANDING = (HERE / "templates" / "login.html").is_file()    # racinglines.bet's landing page; not in the public package
+from racinglines.paths import HOSTED as LANDING  # noqa: E402  (racinglines.bet's landing page; not in the public package)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -429,7 +442,7 @@ def landing_page(request: Request, next: str = "/"):
         if signed_in:
             return RedirectResponse("/markets", status_code=303)
         return signin_page(request, next=next)
-    return templates.TemplateResponse(request, "login.html", dict(next=next, support=SUPPORT_EMAIL, signed_in=signed_in))
+    return templates.TemplateResponse(request, "login.html", dict(next=next, support=support_email(), signed_in=signed_in))
 
 
 @app.get("/signin", response_class=HTMLResponse)
@@ -437,7 +450,7 @@ def landing_page(request: Request, next: str = "/"):
 def signin_page(request: Request, next: str = "/", error: str = ""):
     """Sign in (owner, 2026-10-12: off the landing, on its own page). /login shows the same page, so old links,
     smoke.sh and `vm.sh status` keep a 200 there; the form posts to /login."""
-    return templates.TemplateResponse(request, "signin.html", dict(next=next, error=error, support=SUPPORT_EMAIL))
+    return templates.TemplateResponse(request, "signin.html", dict(next=next, error=error, support=support_email()))
 
 
 def _safe_next(nxt):
@@ -576,7 +589,7 @@ def add_email(request: Request, email: str = Form(""), next: str = Form("/market
 # one per account, shown once; the hosted MCP server accepts it at once.
 # ---------------------------------------------------------------------------
 
-@app.post("/api/settings/token/generate", dependencies=[Depends(check_csrf), allow(*ANY)])
+@app.post("/api/settings/token/generate", dependencies=[Depends(need_mcp), Depends(check_csrf), allow(*ANY)])
 def generate_mcp_token(request: Request):
     from racinglines.mcp import auth as mcp_auth
     user = request.state.user
@@ -591,7 +604,7 @@ def generate_mcp_token(request: Request):
     return {"token": token, "url": oauth.MCP_URL}
 
 
-@app.post("/api/settings/token/revoke", dependencies=[Depends(check_csrf), allow(*ANY)])
+@app.post("/api/settings/token/revoke", dependencies=[Depends(need_mcp), Depends(check_csrf), allow(*ANY)])
 def revoke_mcp_token(request: Request):
     from racinglines.mcp import auth as mcp_auth
     user = request.state.user
@@ -603,7 +616,7 @@ def revoke_mcp_token(request: Request):
     return {"status": "revoked"}
 
 
-@app.post("/api/settings/mcp/disconnect", dependencies=[Depends(check_csrf), allow(*ANY)])
+@app.post("/api/settings/mcp/disconnect", dependencies=[Depends(need_mcp), Depends(check_csrf), allow(*ANY)])
 def disconnect_mcp(request: Request):
     from racinglines.mcp import oauth
     user = request.state.user
@@ -619,7 +632,7 @@ def disconnect_mcp(request: Request):
 # a signed-in account allowed MCP access presses Allow and goes back to the client with a code.
 # ---------------------------------------------------------------------------
 
-@app.get("/mcp/authorize", response_class=HTMLResponse, dependencies=[allow(*ANY)])
+@app.get("/mcp/authorize", response_class=HTMLResponse, dependencies=[Depends(need_mcp), allow(*ANY)])
 def mcp_authorize_page(request: Request, req: str = ""):
     from racinglines.mcp import oauth
     user = request.state.user
@@ -632,7 +645,7 @@ def mcp_authorize_page(request: Request, req: str = ""):
     return resp
 
 
-@app.post("/mcp/authorize", dependencies=[Depends(check_csrf), allow(*ANY)])
+@app.post("/mcp/authorize", dependencies=[Depends(need_mcp), Depends(check_csrf), allow(*ANY)])
 def mcp_authorize(request: Request, req: str = Form(...), decision: str = Form(...)):
     from racinglines.mcp import oauth
     user = request.state.user
@@ -682,13 +695,18 @@ def _signup_page(request, form=None, error="", status_code=200):
 SUPPORT_EMAIL = "hello@racinglines.bet"      # password resets and business enquiries (the landing page) come here
 
 
+def support_email():
+    """SUPPORT_EMAIL on the hosted site only; a self-hosted copy (no branded landing) names no address."""
+    return SUPPORT_EMAIL if LANDING else ""
+
+
 @app.get("/forgot", response_class=HTMLResponse)
 def forgot_password(request: Request):
     """Forgot your password: no reset email is sent (older accounts have no email), so the page writes a reset request to SUPPORT_EMAIL for the
     person to send; an admin resets it at /admin/users and replies with a one-time password."""
     if not signup_on():
         raise HTTPException(404)
-    return templates.TemplateResponse(request, "forgot.html", dict(support=SUPPORT_EMAIL))
+    return templates.TemplateResponse(request, "forgot.html", dict(support=support_email()))
 
 
 @app.get("/signup", response_class=HTMLResponse)
@@ -745,7 +763,9 @@ from racinglines.web import order_routes  # noqa: E402,F401  (linked markets and
 from racinglines.web import book_routes  # noqa: E402,F401  (the private book and the taker's calls)
 from racinglines.web import exchange_routes  # noqa: E402,F401  (exchange boards and tapes)
 from racinglines.web import diag_routes  # noqa: E402,F401  (single-event diagnostics)
-from racinglines.web import mybets  # noqa: E402,F401  (/mybets, the owner's bets calendar from the data folder)
+# /mybets, the owner's bets calendar from the data folder: the hosted site only, the public package leaves it out
+if importlib.util.find_spec("racinglines.web.mybets"):
+    importlib.import_module("racinglines.web.mybets")
 from racinglines.web import term_routes  # noqa: E402,F401  (/docs/quickstart/term, recorded CLI runs)
 from racinglines.web import strategy_pick  # noqa: E402,F401  (/strategy/pick, the account's own strategy)
 from racinglines.web import fantasy_routes  # noqa: E402,F401  (/trade, /history: fantasy trading; staging only)
@@ -773,137 +793,6 @@ async def _f1_live_ws(websocket):
 from starlette.routing import WebSocketRoute  # noqa: E402
 
 app.router.routes.append(WebSocketRoute("/ws/f1/live", _f1_live_ws))
-
-
-# FastF1 live stream (WebSocket support; staging's stream page, web/f1_ws.py)
-from fastapi import WebSocket, WebSocketDisconnect
-from racinglines.web.f1_ws import live_stream_manager, FastF1LiveClient
-
-@app.get("/live/f1/stream", response_class=HTMLResponse)
-def live_f1(request: Request, year: int = 2026, round_num: int = None, c=Depends(conn), user=allow(*ANY)):
-    """FastF1 live stream page with market pricing (Whistler Live demo replica).
-
-    Shows real-time F1 timing from FastF1 alongside live Polymarket prices.
-    Auto-detects current F1 event.
-    """
-    # Find the current/upcoming F1 race (auto-detect if round_num not specified)
-    try:
-        if round_num:
-            # Use specified round
-            races = data.q(c, """
-                SELECT ra.id, ra.event_id, e.season_id, e.start_date, e.name, s.competition_id
-                FROM races ra
-                JOIN events e ON e.id = ra.event_id
-                JOIN seasons s ON s.id = e.season_id
-                WHERE s.year = :year AND e.round = :round
-                LIMIT 1
-            """, year=year, round=round_num)
-        else:
-            # Auto-detect: first look for ongoing, then upcoming, then most recent
-            races = data.q(c, """
-                SELECT ra.id, ra.event_id, e.round, e.season_id, e.start_date, e.name, e.status, s.competition_id
-                FROM races ra
-                JOIN events e ON e.id = ra.event_id
-                JOIN seasons s ON s.id = e.season_id
-                WHERE s.year = :year
-                ORDER BY CASE
-                    WHEN e.status = 'ongoing' THEN 0
-                    WHEN e.status = 'upcoming' THEN 1
-                    WHEN e.status = 'completed' THEN 2
-                END ASC,
-                e.start_date DESC
-                LIMIT 1
-            """, year=year)
-            if races:
-                round_num = races[0].get("round")  # Extract round number from event
-
-        race_id = races[0]["id"] if races else None
-        event_name = races[0].get("name", f"Round {round_num}") if races else None
-    except Exception as e:
-        logger.error(f"Error finding F1 race: {e}")
-        race_id = None
-        event_name = None
-        round_num = 21
-
-    return render(request, "live_f1_stream.html", year=year, round_num=round_num, race_id=race_id, event_name=event_name)
-
-@app.get("/api/f1/markets/{race_id}")
-def f1_markets(race_id: int, c=Depends(conn), user=allow(*ANY)):
-    """Fetch market data for an F1 race (race winner odds)."""
-    try:
-        from racinglines.markets.venues import event_matrix
-        info, pricing, df = event_matrix(c, race_id)
-
-        # Filter to race winner markets
-        winners = df[df["kind"] == "race_win"].copy()
-
-        # Get athlete names
-        athlete_ids = winners["athlete_id"].unique() if len(winners) > 0 else []
-        athletes = {}
-        if len(athlete_ids) > 0:
-            names = data.q(c,
-                f"SELECT id, display_name FROM athletes WHERE id IN ({','.join('?' * len(athlete_ids))})",
-                *athlete_ids)
-            athletes = {row["id"]: row["display_name"] for _, row in names.iterrows()}
-
-        markets = []
-        for _, row in winners.iterrows():
-            athlete_name = athletes.get(row.get("athlete_id"), f"#{row.get('athlete_id', '?')}")
-            fair_val = float(row["fair"]) if row["fair"] is not None and pd.notna(row["fair"]) else None
-            pm_bid = float(row.get("pm_bid", None)) if row.get("pm_bid") is not None and pd.notna(row.get("pm_bid")) else None
-            pm_ask = float(row.get("pm_ask", None)) if row.get("pm_ask") is not None and pd.notna(row.get("pm_ask")) else None
-
-            markets.append({
-                "subject": athlete_name,
-                "fair": fair_val,
-                "bid": pm_bid,
-                "ask": pm_ask,
-            })
-
-        return {"markets": sorted(markets, key=lambda m: m["fair"] or 0, reverse=True), "source": pricing.get("source", "model")}
-    except Exception as e:
-        logger.error(f"Error fetching F1 markets: {e}")
-        return {"markets": [], "error": str(e)}
-
-@app.websocket("/ws/f1/live/{session_id}")
-async def websocket_f1_live(websocket: WebSocket, session_id: str):
-    """WebSocket endpoint for F1 live timing updates."""
-    await websocket.accept()
-    await live_stream_manager.add_client(session_id, websocket)
-
-    try:
-        while True:
-            # Keep connection alive and handle incoming messages
-            data = await websocket.receive_text()
-            msg = json.loads(data)
-
-            if msg.get("type") == "start":
-                # Start live updates for this session
-                year = msg.get("year")
-                round_num = msg.get("round")
-                session_name = msg.get("session")  # "FP1", "FP2", "FP3", "SQ", "SS", "Q", "R"
-
-                if year and round_num and session_name:
-                    try:
-                        fastf1_session = await FastF1LiveClient.get_session(year, round_num, session_name)
-                        if fastf1_session is None:
-                            await websocket.send_json({
-                                "type": "error",
-                                "data": {"error": f"F1 session {year} R{round_num} {session_name} not found"}
-                            })
-                        else:
-                            await live_stream_manager.start_live_updates(session_id, fastf1_session, update_interval=5)
-                    except Exception as e:
-                        logger.error(f"Error loading F1 session {year} R{round_num} {session_name}: {e}")
-                        await websocket.send_json({
-                            "type": "error",
-                            "data": {"error": f"Failed to load session: {str(e)[:100]}"}
-                        })
-    except WebSocketDisconnect:
-        await live_stream_manager.remove_client(session_id)
-    except Exception as e:
-        logger.error(f"WebSocket error for {session_id}: {e}")
-        await live_stream_manager.remove_client(session_id)
 
 
 from racinglines.web import admin  # noqa: E402,F401  (registers /admin routes)

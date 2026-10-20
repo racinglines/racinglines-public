@@ -99,67 +99,8 @@ class Client:
     def __exit__(self, *a):
         self.close()
 
-    def _coinbase_call(self, endpoint, **params):
-        """Temporary public GraphQL fallback for Coinbase's event and market pages. It does not include a trading API."""
-        ep = self.schema["endpoints"][endpoint]
-        if endpoint in {"events", "instruments"}:
-            event_ticker = params.get("eventTicker") or _coinbase_default_event_ticker()
-            payload = {
-                "operationName": ep["operationName"],
-                "variables": {
-                    "eventTicker": event_ticker,
-                    "productsSortOption": params.get("productsSortOption", "PRICE"),
-                    "productsSortOrder": params.get("productsSortOrder", "DESC"),
-                    "countryCode": params.get("countryCode", "US"),
-                    "locale": params.get("locale", "en"),
-                },
-                "extensions": {"persistedQuery": {"version": 1, "sha256Hash": ep["sha256Hash"]}},
-            }
-        elif endpoint == "tickers":
-            product_ids = list(params.get("product_ids") or params.get("ids") or params.get("liveProductIds") or [])
-            if not product_ids:
-                return {"data": {"retailBrokerage": {"productsStats": []}}}
-            payload = {
-                "operationName": ep["operationName"],
-                "variables": {"liveProductIds": product_ids, "skipLiveProductStats": False},
-                "extensions": {"persistedQuery": {"version": 1, "sha256Hash": ep["sha256Hash"]}},
-            }
-        elif endpoint == "history":
-            product_ids = list(params.get("product_ids") or params.get("ids") or params.get("chartedMarketProductIds") or [])
-            if not product_ids:
-                return {"data": {"retailBrokerage": {"priceChartsHour": []}}}
-            payload = {
-                "operationName": ep["operationName"],
-                "variables": {
-                    "chartedMarketProductIds": product_ids,
-                    "includeHour": True,
-                    "includeDay": True,
-                    "includeWeek": True,
-                    "includeAll": True,
-                },
-                "extensions": {"persistedQuery": {"version": 1, "sha256Hash": ep["sha256Hash"]}},
-            }
-        else:
-            return {"data": {"retailBrokerage": {"productsStats": []}}}
-        r = http.post(self.http, ep["path"], json=payload)
-        r.raise_for_status()
-        body = r.json()
-        if body.get("errors"):
-            raise RuntimeError(f"{self.code} {endpoint}: {body['errors']}")
-        if endpoint in {"events", "instruments"}:
-            event_ticker = payload["variables"]["eventTicker"]
-            products = EX.dig(body, "data.retailBrokerage.instrumentGroup.products") or []
-            for product in products:
-                product["eventTicker"] = event_ticker
-                product.setdefault("event_title", event_ticker)
-                product.setdefault("tradable", True)
-                product.setdefault("instrumentName", product.get("productId", ""))
-        return body
-
     def call(self, endpoint, **params):
         """The parsed response of a schema endpoint; raises on HTTP errors or the exchange's own error code."""
-        if self.code == "coinbase":
-            return self._coinbase_call(endpoint, **params)
         ep, api = self.schema["endpoints"][endpoint], self.schema["api"]
         q = {**ep.get("params", {}), **{k: v for k, v in params.items() if v is not None}}
         r = http.get(self.http, ep["path"], params=q)
@@ -190,8 +131,6 @@ class Client:
 
     def batched(self, endpoint, values, **params):
         """Every row of an endpoint that takes comma-separated ids, `batch_size` at a time (and paged, if it pages)."""
-        if self.code == "coinbase" and endpoint == "tickers":
-            return self.rows(endpoint, product_ids=list(values), **params)
         ep, out = self.schema["endpoints"][endpoint], []
         values = list(values)
         for i in range(0, len(values), ep.get("batch_size", 25)):
@@ -226,11 +165,6 @@ def sport_cfg(schema, sport):
 def discover(client, sport):
     """(events, instruments) the exchange lists for `sport`: events whose symbol starts with one of the schema's
     prefixes, then their instruments. Settled or expired instruments have left the listing."""
-    if client.code == "coinbase":
-        event_ticker = _coinbase_default_event_ticker()
-        event = {"eventTicker": event_ticker, "event_title": "Bahrain Grand Prix", "id": event_ticker}
-        products = client.rows("instruments", eventTicker=event_ticker)
-        return [event], products
     cfg, f = sport_cfg(client.schema, sport), client.schema["fields"]
     prefixes = tuple(cfg["event_prefixes"])
     events = [e for e in client.paged("events") if str(EX.dig(e, f["event"]["id"]) or "").startswith(prefixes)]
@@ -238,47 +172,9 @@ def discover(client, sport):
     return events, client.batched("instruments", ids) if ids else []
 
 
-def _coinbase_f1_subject(inst):
-    """A Coinbase F1 product's driver code from its productId (e.g. KXF1RACE-BAH26-ANT-KALSHI -> ANT)."""
-    product = str(EX.dig(inst, "productId") or EX.dig(inst, "id") or "")
-    if not product:
-        return ""
-    bits = product.upper().split("-")
-    if bits and bits[0].startswith("KXF1") and product.upper().endswith("-KALSHI") and len(bits) >= 4:
-        return bits[-2]
-    return ""
-
-
-class CoinbaseF1Resolver:
-    """Resolve_PRODUCT_ID driver abbreviations like ANT, NOR, LEC to the driver's athlete_id in the current F1 data."""
-
-    def __init__(self, conn):
-        self.conn = conn
-
-    def driver(self, subject):
-        code = str(subject or "").upper().strip()
-        if not code:
-            return None
-        row = self.conn.execute(text("""
-            SELECT r.athlete_id
-            FROM results r
-            JOIN rounds ro ON ro.id = r.round_id
-            JOIN races ra ON ra.id = ro.race_id
-            JOIN events e ON e.id = ra.event_id
-            JOIN seasons s ON s.id = e.season_id
-            WHERE upper(coalesce(r.extra->>'abbreviation', '')) = :code
-            ORDER BY s.year DESC, e.start_date DESC, r.id DESC
-            LIMIT 1
-        """), dict(code=code)).scalar()
-        return int(row) if row is not None else None
-
-
 def classify(schema, sport, contract):
     """(prediction kind, subject kind) for a market's contract name, from the sport's rules; else unmodeled."""
     cfg = sport_cfg(schema, sport)
-    if schema.get("exchange", {}).get("code") == "coinbase" and sport == "f1":
-        if re.search(r"^KXF1(?:RACE)?-[A-Z0-9]+-[A-Z]{2,5}-KALSHI$", (contract or "").upper()):
-            return "race_win", "driver"
     if not cfg.get("modeled"):
         return "unmodeled", None
     for rule in cfg.get("rules", []):
@@ -297,10 +193,6 @@ def link_rows(schema, sport, instruments, tickers, resolver=None):
         tok = EX.dig(inst, fi["id"])
         subject = EX.dig(inst, fi["subject"]) or ""
         contract = EX.dig(inst, fi["contract"]) or EX.dig(inst, fi["event_title"]) or ""
-        if schema.get("exchange", {}).get("code") == "coinbase" and sport == "f1" and not subject:
-            subject = _coinbase_f1_subject(inst)
-        elif schema.get("exchange", {}).get("code") == "coinbase" and sport == "f1" and subject == contract:
-            subject = _coinbase_f1_subject(inst) or subject
         kind, who = classify(schema, sport, contract)
         athlete_id, params, race_id = None, {}, None
         if kind != "unmodeled":
@@ -355,13 +247,7 @@ def sync(session, conn, code, sport="f1", year=2026, client=None, resolver=None)
     if resolver is None and sport_cfg(schema, sport).get("modeled"):
         from racinglines.markets.polymarket.sync import Resolver
         resolver = Resolver(conn, year)
-    modeled = sport_cfg(schema, sport).get("modeled") or (code == "coinbase" and sport == "f1")
-    if resolver is None and modeled:
-        if code == "coinbase" and sport == "f1":
-            resolver = CoinbaseF1Resolver(conn)
-        else:
-            from racinglines.markets.polymarket.sync import Resolver
-            resolver = Resolver(conn, year)
+    modeled = sport_cfg(schema, sport).get("modeled")
     rows = link_rows(schema, sport, instruments, tickers, resolver)
     who = identity.linker(sport, conn) if not modeled else None
     if who:                                                          # a tape-only sport with a resolver: driver, race, kind

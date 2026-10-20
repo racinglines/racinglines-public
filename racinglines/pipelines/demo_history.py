@@ -29,8 +29,10 @@ SETTLED = pd.Timedelta(days=1)       # replay each weekend as of a day after its
 
 
 def reset(engine, usernames, venue="polymarket"):
+    """Delete the accounts' backfilled signals for `venue` and their positions on that venue only (a Polymarket
+    reset leaves the private book's, Kalshi's and OG.com's rows for the same events alone)."""
     sig = "coalesce(detail->>'venue', 'polymarket') = :v"
-    pos = "venue = :v" if venue != "polymarket" else "venue NOT LIKE 'kalshi%'"
+    pos = "venue = :v"
     with engine.begin() as c:
         ids = c.execute(text("SELECT id FROM users WHERE username = ANY(:u)"), dict(u=list(usernames))).scalars().all()
         keys = c.execute(text(f"""SELECT DISTINCT event_key FROM strategy_signals WHERE user_id = ANY(:i)

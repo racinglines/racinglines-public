@@ -2,8 +2,8 @@
   {
     "id": "step-1",
     "title": "\ud83d\udce6 Install racinglines",
-    "command": "pip install -r requirements.txt && pip install -e .",
-    "about": "From a clone of the repository, in a virtualenv with Python 3.11+: the dependencies and the `racinglines` command.",
+    "command": "pip install \"racinglines[db]\"",
+    "about": "In a virtualenv with Python 3.11+: the package with its database extra (from a clone of racinglines-public, `pip install -e \".[web]\"`).",
     "record": false
   },
   {

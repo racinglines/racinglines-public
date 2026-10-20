@@ -18,6 +18,8 @@ from pathlib import Path
 PACKAGE = Path(__file__).resolve().parent
 CHECKOUT = (PACKAGE.parent / "pyproject.toml").is_file()    # a git checkout (also `pip install -e .`), not a wheel
 # the committed configs (sports/, markets/, exchanges/): the checkout's, or the copies a wheel bundles (pyproject.toml)
+# racinglines.bet's own copy: its branded landing page ships only there (oss/manifest.toml leaves it out of the package)
+HOSTED = (PACKAGE / "web" / "templates" / "login.html").is_file()
 ROOT = PACKAGE.parent if CHECKOUT else PACKAGE / "_bundled"
 HOME = PACKAGE.parent if CHECKOUT else Path.home() / ".racinglines"     # where data/ goes when nothing says otherwise
 DATA = Path(os.environ.get("RACINGLINES_DATA", HOME / "data"))
@@ -58,5 +60,3 @@ def rel(path):
 F1_RAW = raw("f1", "fastf1")
 DH_RAW = raw("mtb_dh", "chronorace")
 NASCAR_RAW = raw("nascar", "cf")
-MOTOGP_RAW = raw("motogp", "pulselive")
-DH_MANUAL = raw("mtb_dh", "manual")

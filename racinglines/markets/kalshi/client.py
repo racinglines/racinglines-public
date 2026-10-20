@@ -39,7 +39,7 @@ PAGE = 200
 
 def price(obj, field):
     """A price field as a probability: `<field>_dollars` ("0.5600") if present, else `<field>` in cents; None
-    when missing or zero-sized (Kalshi reports an empty side as 0 bid / 100 ask)."""
+    when missing. An empty side comes back as Kalshi reports it (0 bid / 100 ask), so callers drop 0 themselves."""
     d = obj.get(f"{field}_dollars")
     if d not in (None, ""):
         v = float(d)

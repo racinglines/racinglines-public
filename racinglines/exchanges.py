@@ -61,7 +61,9 @@ def enabled(code):
 
 
 def sports(code):
-    return tuple(load(code).get("sports", {}))
+    """The sports the exchange's schema maps ([sports.<code>]), keeping only those whose sports/<code>.toml is
+    installed: the public release ships some sports only, and a page that loads every listed sport would fail."""
+    return tuple(s for s in load(code).get("sports", {}) if (ROOT / "sports" / f"{s}.toml").exists())
 
 
 def dig(obj, path):

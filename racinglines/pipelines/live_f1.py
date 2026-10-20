@@ -237,39 +237,6 @@ def venue_price_ages(markets, asof):
     return out
 
 
-def compare_exchange_prices(links, threshold=0.005):
-    """Any Coinbase/Kalshi gap above a small threshold, logged once per poll for later inspection."""
-    rows = [] if links is None or len(links) == 0 else links.to_dict("records") if hasattr(links, "to_dict") else list(links)
-    by_key = {}
-    for row in rows:
-        if not row:
-            continue
-        code = str(row.get("exchange") or "").lower()
-        if code not in ("coinbase", "kalshi"):
-            continue
-        key = _market_lookup_key(row.get("prediction") or row.get("kind") or row.get("market_kind"),
-                                 row.get("athlete_id"), row.get("params"))
-        val = row.get("last_price")
-        val = None if val is None or pd.isna(val) else float(val)
-        if val is None:
-            continue
-        prev = by_key.setdefault(key, {"kind": row.get("prediction") or row.get("kind") or row.get("market_kind"),
-                                      "athlete_id": row.get("athlete_id"), "params": row.get("params"),
-                                      "coinbase": None, "kalshi": None})
-        prev[code] = val
-    out = []
-    for key, vals in by_key.items():
-        cb, ks = vals.get("coinbase"), vals.get("kalshi")
-        if cb is None or ks is None:
-            continue
-        diff = abs(cb - ks)
-        if diff > threshold:
-            out.append(dict(kind=vals.get("kind"), athlete_id=vals.get("athlete_id"), params=vals.get("params"),
-                            market_key=list(key), coinbase=cb, kalshi=ks, diff=diff))
-    out.sort(key=lambda r: r["diff"], reverse=True)
-    return out
-
-
 def markets(conn, event_key, run_id, source="last_listed", kinds=KINDS, props=None):
     """Adapter interface: the event's markets and their fair values from a stage run (props: the [live.props]
     settings, for prop kinds)."""
@@ -632,13 +599,6 @@ def step(spec, now=None, fetch=True, unfreeze=False, echo=print, engine=None, en
                 last_ask, token_id, event_slug, synced_at FROM market_links WHERE race_id = :r AND prediction IS NOT NULL"""),
                                c, params=dict(r=rid))
             mkts = attach_exchange_prices(mkts, links)
-            diffs = compare_exchange_prices(links, threshold=0.005)
-            LV.append(out, "coinbase_kalshi_diffs.jsonl",
-                      dict(ts=_iso(now), event_key=event_key, threshold=0.005, n_diffs=len(diffs), diffs=diffs))
-            if diffs:
-                echo(f"{_iso(now)} {event_key}: Coinbase/Kalshi diff check: {len(diffs)} markets above 0.5%")
-        else:
-            diffs = []
     snap = dict(ts=_iso(now), sport="f1", event_key=event_key, title=spec.get("title") or w["name"], name=w["name"],
                 update=dict(label=update["label"], kind=update["kind"], n=len([d for d in st["done"] if not d.get("skipped")])),
                 updates=[dict(label=u["label"], kind=u["kind"], at=_iso(u["at"]),
@@ -715,7 +675,21 @@ def _stage_runs(spec, w, now, fetch, cache, echo, engine, engine_url):
 # (backfill_inrace) -> models/inrace.py
 # ---------------------------------------------------------------------------
 
-RACE_LAPS = 56       # race distance for the in-race chart; Sepang (2026-16). RACINGLINES_RACE_LAPS overrides
+RACE_LAPS = 56       # race distance for the in-race chart when the race's meta has none; Sepang (2026-16)
+
+
+def race_laps(year, rnd):
+    """The race distance for the in-race chart: RACINGLINES_RACE_LAPS, else the race session meta's total_laps
+    (data/raw/f1/fastf1/<year>/<round>_R.meta.json, from f1 fetch), else RACE_LAPS."""
+    import os
+    if os.environ.get("RACINGLINES_RACE_LAPS"):
+        return int(os.environ["RACINGLINES_RACE_LAPS"])
+    from racinglines.sources.fastf1.fetch import OUT
+    try:
+        n = json.loads((OUT / str(year) / f"{rnd:02d}_R.meta.json").read_text()).get("total_laps")
+    except (OSError, ValueError, AttributeError):
+        n = None
+    return int(n) if n else RACE_LAPS
 
 
 def inrace_store(year, rnd):
@@ -727,7 +701,6 @@ def inrace_points(run, snap, now=None, replay=False):
     """The in-race win-chart points so far, as hist entries (ts, fair by race_win key). Live, each fresh race
     snapshot from the relay adds one point to the store (once per relay write); in replay nothing is added and
     only the points up to the snapshot shown are returned. [] when nothing is stored."""
-    import os
     import re
 
     from racinglines.models import inrace as IR
@@ -743,7 +716,7 @@ def inrace_points(run, snap, now=None, replay=False):
     if data and str(data.get("session")) in ("Race", "R"):
         prior = {name: next((mk["fair"] or 0.0 for mk in snap["markets"] if mk["key"] == k), 0.0)
                  for name, k in wins.items()}
-        probs, laps = IR.win_probs(data.get("drivers") or [], prior, int(os.environ.get("RACINGLINES_RACE_LAPS", RACE_LAPS)))
+        probs, laps = IR.win_probs(data.get("drivers") or [], prior, race_laps(year, rnd))
         if probs is not None:
             t = (now if now is not None else pd.Timestamp.now(tz="UTC")) - pd.Timedelta(seconds=data.get("relay_age") or 0)
             t = t.floor("min")

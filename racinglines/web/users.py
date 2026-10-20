@@ -11,6 +11,7 @@ Passwords are hashed with scrypt (standard library): "scrypt$n$r$p$salt$hash".
 
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 import secrets
@@ -124,7 +125,25 @@ def log(engine, user, action, request=None, **detail):
             path=str(request.url.path) if request is not None else None))
 
 
+def _trusted_proxy(peer):
+    """Whether the direct peer may set the client address: loopback (cloudflared on the VM forwards racinglines.bet
+    to 127.0.0.1:8000, docs/vm-deploy.md), or any peer with RACINGLINES_TRUST_PROXY=1 (another reverse proxy).
+    A self-hosted app reached directly ignores the headers, so a client can't rotate its address past the limits."""
+    if os.environ.get("RACINGLINES_TRUST_PROXY") == "1":
+        return True
+    try:
+        a = ipaddress.ip_address(peer or "")
+    except ValueError:
+        return False
+    return a.is_loopback or bool(getattr(a, "ipv4_mapped", None) and a.ipv4_mapped.is_loopback)
+
+
 def _ip(request):
-    return (request.headers.get("cf-connecting-ip")
-            or request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-            or (request.client.host if request.client else None))
+    """The client address: the proxy's cf-connecting-ip / x-forwarded-for from a trusted peer, else the peer."""
+    peer = request.client.host if request.client else None
+    if _trusted_proxy(peer):
+        fwd = (request.headers.get("cf-connecting-ip")
+               or request.headers.get("x-forwarded-for", "").split(",")[0].strip())
+        if fwd:
+            return fwd
+    return peer

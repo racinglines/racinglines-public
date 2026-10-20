@@ -1,0 +1,7 @@
+{# A job's `settings` knob (jobs.Knob type sweep_settings) on the generic Run form: the sweep settings it takes
+   (the knob's choices; the event diagnostic's model settings), drawn by the sweep form's own field macro and posted
+   as plain fields that jobs.parse_sweep_settings reads. `k` is the knob, `vals` the last-used settings. #}
+{% from "lab_setting_field.html" import field with context %}
+<details class="more"><summary>{{ k.label }} <span class="muted">({{ k.help }})</span></summary>
+<div class="jobform">{% for g, glabel, items in sweep_groups %}{% for s in items if s.name in k.choices %}{{ field(s, vals.get(s.name, s.default)) }}{% endfor %}{% endfor %}</div>
+</details>

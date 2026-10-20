@@ -68,9 +68,14 @@ def _notice(argv):
               file=sys.stderr)
 
 
-# a module the core install leaves out (pyproject.toml dependencies) -> what `pip install` calls it
-PIP_NAMES = {"sklearn": "scikit-learn", "bs4": "beautifulsoup4", "psycopg": "psycopg[binary]", "jinja2": "Jinja2",
-             "multipart": "python-multipart", "socketio": "python-socketio", "py_clob_client_v2": "py-clob-client-v2"}
+# a module the core install leaves out (pyproject.toml dependencies) -> what to `pip install`: the extra that carries it
+# ([db] before [web], owner 19 Oct), else the module's own pip name
+_DB = '"racinglines[db]"'
+_WEB = '"racinglines[web]"'
+PIP_NAMES = {"psycopg": _DB, "alembic": _DB, "httpx": _DB, "pyarrow": _DB, "markdown": _DB, "matplotlib": _DB,
+             "fastf1": _DB, "requests": _DB, "bs4": _DB, "lxml": _DB, "mcp": '"racinglines[mcp]"',
+             "fastapi": _WEB, "uvicorn": _WEB, "jinja2": _WEB, "multipart": _WEB,
+             "sklearn": "scikit-learn", "socketio": "python-socketio", "py_clob_client_v2": "py-clob-client-v2"}
 
 
 def version():
@@ -94,11 +99,28 @@ def main(argv=None):
         return _run(argv)
     except ModuleNotFoundError as ex:
         top = (ex.name or "").split(".")[0]
-        if not top or top == "racinglines":
+        if top == "racinglines":
+            return _left_out(argv, ex)
+        if not top:
             raise
         print(f"racinglines {' '.join(argv[:2])}: needs {top}, which the core install leaves out: "
               f"pip install {PIP_NAMES.get(top, top)}", file=sys.stderr)
         return 2
+    except ImportError as ex:
+        return _left_out(argv, ex)
+
+
+def _left_out(argv, ex):
+    """A command that reaches a module the public package leaves out (oss/manifest.toml; the export lists these lazy
+    imports): one line saying so, not a traceback. In a checkout every module is there, so it is a real error."""
+    from racinglines.paths import CHECKOUT
+    m = re.search(r"cannot import name '(\w+)' from '(racinglines[\w.]*)'", str(ex))
+    module = f"{m.group(2)}.{m.group(1)}" if m else ex.name
+    if CHECKOUT or not (module or "").startswith("racinglines"):
+        raise ex
+    print(f"racinglines {' '.join(a for a in argv[:3] if not a.startswith('-'))}: not in this release "
+          f"(it needs {module}, which the public package leaves out)", file=sys.stderr)
+    return 2
 
 
 def _run(argv):

@@ -15,7 +15,6 @@ whose price moved most. Everything comes from the run folder; nothing is re-pric
 import html as H
 import json
 import math
-import shutil
 import subprocess
 
 import numpy as np
@@ -249,12 +248,13 @@ def to_html(md, svgs, title):
 
 
 def chrome():
-    for exe in ("google-chrome", "chromium", "chromium-browser", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-                "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"):
-        path = shutil.which(exe) or (exe if exe.startswith("/") and __import__("os").path.exists(exe) else None)
-        if path:
-            return path
-    return None
+    """A headless Chromium, by the board renderer's lookup (books/render.find_chrome: $RACINGLINES_CHROME, then PATH,
+    then the Playwright and macOS install locations if they exist). None when there is none, or the env var's is missing."""
+    from racinglines.books.render import RenderError, find_chrome
+    try:
+        return find_chrome()
+    except RenderError:
+        return None
 
 
 def write(spec, pdf=False):

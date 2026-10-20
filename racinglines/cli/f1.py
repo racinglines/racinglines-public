@@ -256,6 +256,8 @@ def main(argv=None):
     p.add_argument("--save", action="store_true")
     p.add_argument("--calib-power", default=None,
                    help="Win-price calibration power (C48): walk_forward, a number from 1 to 10, or unset = off.")
+    _SS.add_arguments(p.add_argument_group("model settings (racinglines/pipelines/sweep_settings.py; default = baseline)"),
+                      skip=_diagnostic_skip())
     p = sub.add_parser("combo", help="Combo (same-game parlay) prices for one event (combo_job.py).")
     p.add_argument("--event", required=True, help="Season-round, e.g. 2026-17")
     p.add_argument("--cutoff", default=None, help="UTC as-of time, e.g. 2026-10-09T08:00 (default: now)")
@@ -310,6 +312,45 @@ def main(argv=None):
     V.switches(args.variant)                         # fail fast on an unknown name
     with V.use(args.variant):
         return _run(args)
+
+
+# the diagnostic takes the model group of the sweep settings; its own --sims (default 10000) and --calib-power stay
+def _diagnostic_skip():
+    from racinglines.pipelines import sweep_settings as SS
+    return tuple(s.name for s in SS.SETTINGS if s.group != "model") + ("sims", "calib_power")
+
+
+def diagnostic_settings(args):
+    """The model settings of `model diagnostic f1` (the global --half-life counts while --half-life-days is unset)."""
+    from racinglines.pipelines import sweep_settings as SS
+    if getattr(args, "half_life", None) and getattr(args, "half_life_days", None) is None:
+        args.half_life_days = args.half_life
+    model = {s.name for s in SS.SETTINGS if s.group == "model"}
+    st = SS.from_args(args, skip=tuple(s.name for s in SS.SETTINGS if s.name not in model) + ("sims",))
+    return st
+
+
+def _diagnostic(args, run, meas, calib, fmt):
+    """Price one past event as of a cutoff under the model settings, and (with --save) store it with them."""
+    import pandas as pd
+    st = diagnostic_settings(args)
+    use_track = not args.no_track and st["track_features"] is not False
+    cutoff = pd.Timestamp(args.cutoff)
+    with st.applied():
+        hist = run.history(meas, use_track)
+        event_id, summ, ex, result = run.diagnostic(meas, hist, args.event, cutoff, n_sims=args.sims,
+                                                    seed=st.rng_seed, use_track=use_track)
+        print("Leakage audit:", ex["audit"])
+        out = summ.merge(result, on="athlete_id")
+        print(out[["driver", "team_key", "win_prob", "podium_prob", "top10_prob", "position", "status"]]
+              .head(args.sims and 12).to_string(index=False, formatters=fmt))
+        if args.save:
+            extra = {"calib_power": calib} if calib else {}
+            if st["variant"] != "baseline":
+                extra["variant"] = st["variant"]
+            run_id = run.save_diagnostic(args.db, args.event, cutoff, summ, ex, args.sims, track_features=use_track,
+                                         model_settings=st.to_json(), **extra)
+            print(f"Saved diagnostic run {run_id}.")
 
 
 def _season_sleeve(args, engine, prm, SE, get_session, records):
@@ -575,7 +616,8 @@ def _run(args):
             kinds = PR.PROP_KINDS if args.run else tuple(PR.BINARY)
             for mk in PR.markets(c, args.event, args.run, kinds, prior_n):
                 name = "" if mk["subject"] == PR.LABEL[mk["kind"]] else mk["subject"]
-                print(f"{PR.LABEL[mk['kind']]:12} {name:24} {mk['fair']:.1%}")
+                fair = "-" if mk["fair"] is None else f"{mk['fair']:.1%}"     # no race history before it: no price
+                print(f"{PR.LABEL[mk['kind']]:12} {name:24} {fair}")
         return
     if args.cmd in ("pm-links-export", "pm-links-import"):
         from racinglines import paths
@@ -1194,6 +1236,9 @@ def _run(args):
             print(f"Saved backtest run {run_id}.")
         return
 
+    if args.cmd == "diagnostic":
+        return _diagnostic(args, run, meas, calib, fmt)
+
     use_track = not getattr(args, "no_track", False)
     hist = run.history(meas, use_track)
 
@@ -1204,19 +1249,6 @@ def _run(args):
         if args.out:
             out.to_csv(args.out, index=False)
             print(f"\nPer-weekend rows -> {args.out}")
-        return
-
-    if args.cmd == "diagnostic":
-        cutoff = pd.Timestamp(args.cutoff)
-        event_id, summ, ex, result = run.diagnostic(meas, hist, args.event, cutoff, n_sims=args.sims, use_track=use_track)
-        print("Leakage audit:", ex["audit"])
-        out = summ.merge(result, on="athlete_id")
-        print(out[["driver", "team_key", "win_prob", "podium_prob", "top10_prob", "position", "status"]]
-              .head(args.sims and 12).to_string(index=False, formatters=fmt))
-        if args.save:
-            run_id = run.save_diagnostic(args.db, args.event, cutoff, summ, ex, args.sims, track_features=use_track,
-                                         **({"calib_power": calib} if calib else {}))
-            print(f"Saved diagnostic run {run_id}.")
         return
 
     if args.cmd == "combo":

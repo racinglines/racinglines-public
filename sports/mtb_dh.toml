@@ -8,9 +8,6 @@ name = "Mountain bike downhill"
 result_kind = "time"              # results are run times
 model_family = "global"           # the one engine (racinglines/models/model_global.py), with [model] below
 pricing_model = "racinglines.models.model_global:GlobalModel"   # every modelled sport's (docs/backtest-core.md)
-# Downhill's engine before the one engine, kept runnable for comparisons (`racinglines backtest walk-forward mtb_dh
-# --model timed_runs`): the same run-times core and settings, so its prices equal the engine's (tests/test_one_engine.py)
-challengers = { timed_runs = "racinglines.models.race_model:TimedRuns" }
 display_order = 5
 # Left off the Markets page (sections and calendar) for everyone, admins included (owner, 2026-10-12: "UCI road only. Hide
 # UCI DH for now"). Its own pages, the live viewer, recording and pricing are unchanged; delete this line to show it again.
@@ -43,7 +40,7 @@ default_format = { kind = "q1q2", q1_to_final = 20, q2_to_final = 10 }
 
 [model]
 # The one engine's inputs (racinglines/models/inputs/__init__.py): timed runs pick the run-times core
-# (models/inputs/run_times/core.py, the downhill engine that was race_model.TimedRuns); "practice" adds the timed
+# (models/inputs/run_times/core.py, the downhill engine before the one engine); "practice" adds the timed
 # training runs at [rounds] run_weights.practice. Decision log 2026-10-11 "One engine" (provisional, staging only):
 # every price as before.
 inputs = ["run_times", "practice"]

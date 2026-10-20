@@ -64,7 +64,9 @@ def settings(sport, overrides=None):
 
 
 def spec_path(sport, event):
-    return SPECS / sport / f"{event}.toml"
+    """Where `racinglines live new` writes a spec: the repository's live/ in a checkout; in an installed package, the
+    data folder's live/ (load_spec reads both), never the package's own folder."""
+    return (SPECS if paths.CHECKOUT else paths.DATA / "live") / sport / f"{event}.toml"
 
 
 def load_spec(path):

@@ -33,7 +33,7 @@ from racinglines.paths import ROOT
 SCHEMAS = ROOT / "sports"
 SPORT_CODES = tuple(c for c in ("mtb_dh", "f1", "nascar", "motogp", "indycar", "road_cycling", "le_mans", "sailgp")
                     if (SCHEMAS / f"{c}.toml").exists())   # registry / seeding order (keeps database ids stable); the
-                                                          # public release ships f1.toml only (oss/manifest.toml)
+                                                          # public release ships f1 and mtb_dh (oss/manifest.toml)
 
 
 @cache

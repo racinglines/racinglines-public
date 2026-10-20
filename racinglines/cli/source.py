@@ -30,6 +30,9 @@ from pathlib import Path
 _PKG = Path(__file__).resolve().parents[1]
 HOME = _PKG.parent if (_PKG.parent / "pyproject.toml").is_file() else Path.home() / ".racinglines"
 
+# How to start the local database: a checkout has docker-compose.yml, the pip package has the README's docker run line
+START_DB = "a PostgreSQL on localhost:5433 (`docker compose up -d` in a checkout, or the README's `docker run` line)"
+
 
 def _config():
     from racinglines.cli import config as C
@@ -96,7 +99,7 @@ def ensure(pk, url, data, console=None):
         why = store.status(pk, url, data)
     except Exception as ex:                                   # noqa: BLE001  no server: say how to start one
         raise SystemExit(f"demo: no Postgres server for {_safe(url)} ({type(ex).__name__}). Start one with "
-                         f"`docker compose up -d` (port 5433, docs/quickstart.md), or set DATABASE_URL to your own "
+                         f"{START_DB}, or set DATABASE_URL to your own "
                          f"server: the demo database is created next to it.") from None
     if why == "ready":
         return
@@ -146,8 +149,8 @@ def take_demo(argv):
 # ---------------------------------------------------------------------------
 
 FIRST_RUN = """racinglines needs a database, and none is configured (no DATABASE_URL, no `db` or `source` in {path}).
-  1) local:  the Postgres of docker-compose.yml on localhost:5433; start it with one command, `docker compose up -d`
-             (then every command works; add --demo for the synthetic demo store, docs/quickstart.md)
+  1) local:  a PostgreSQL on localhost:5433: `docker compose up -d` in a checkout, or the `docker run` line of the
+             README's step 3 (then every command works; add --demo for the synthetic demo store)
   2) remote: sign in to racinglines.bet (the browser opens on first use) and run `racinglines book map|price|settle`
              on the hosted server, like `racinglines remote ...` and `--remote` on a Lab-job command (in testing);
              other commands still need a local database"""
@@ -168,7 +171,7 @@ def default_url():
     src = cfg.get("source") or choose_first_run()
     if src == "remote":
         raise SystemExit("this command needs a database, and the defaults file's source is remote (racinglines.bet runs "
-                         "`racinglines book map|price|settle`, `racinglines remote` and `--remote` Lab jobs). Start a local one with `docker compose up -d` and "
+                         f"`racinglines book map|price|settle`, `racinglines remote` and `--remote` Lab jobs). Start a local one ({START_DB}) and "
                          f"set `racinglines book config source local`, or set DATABASE_URL ({C.path()}).")
     return DEFAULT_URL
 
@@ -196,7 +199,7 @@ def choose_first_run(ask=None):
     C.set_key("source", src)
     print(f"saved source = {src} in {C.path()} (`racinglines book config source local|remote` changes it)", file=sys.stderr)
     if src == "local":
-        print("start the database with `docker compose up -d` if it isn't running (port 5433)", file=sys.stderr)
+        print(f"start the database if it isn't running: {START_DB}", file=sys.stderr)
     return src
 
 

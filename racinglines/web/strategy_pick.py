@@ -4,8 +4,8 @@ select one ... defaults + sensible toggles/sliders"). Sign-up assigns none, so u
 for them; this page is the user-facing side of what /admin/users/<id> does (admin.admin_user_profile).
 
     basic        "Your picks" (roles.basic_profile: its own draw of BASIC_PICKS from the taker shortlist), or none
-    pro, admin   the taker shortlist (profiles.TAKER_TOP, ranked), the recommended blend (COMBOS) and maker C (only
-                 with profiles.MAKERS_OPEN; off for the Alpha Fantasy Launch), with the few settings worth a slider
+    pro, admin   the taker shortlist (profiles.TAKER_TOP, ranked), the recommended blend (COMBOS) and maker C (open to
+                 users since 2026-10-12 05:11Z), with the few settings worth a slider
                  (TUNABLE) on a single strategy; a blend runs as tuned
 
 The page shows every sport and exchange a strategy could point at (admin.profile_slots; owner, 2026-10-11 22:30Z:

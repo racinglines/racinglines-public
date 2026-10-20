@@ -1,8 +1,7 @@
 """
 Sync Kalshi's F1 markets into market_links (exchange = 'kalshi'), map each to the model prediction that
 prices it, and store its tape, price history and order books in the same tables as Polymarket's. Nothing runs
-unless called (`racinglines markets --exchange kalshi ...`); built and tested on mocked responses only, since
-the cloud network policy blocks Kalshi's API. F1 roadmap, F1-9.
+unless called (`racinglines markets --exchange kalshi ...`); the tests use mocked responses. F1 roadmap, F1-9.
 
 One link per Kalshi market: its YES contract (token_id = the market ticker, condition_id = the event ticker;
 NO is the mirror image). Titles are classified like Polymarket's. Checked against the live listing on

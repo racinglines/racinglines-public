@@ -37,6 +37,7 @@ import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
 
+from racinglines import paths as P
 from racinglines.books import schema as S
 from racinglines.paths import ROOT
 
@@ -296,6 +297,11 @@ def _e(x):
     return html.escape("" if x is None else str(x))
 
 
+def _brand():
+    """The racinglines.bet stamp in a board's footer: the hosted site's renders only (paths.HOSTED)."""
+    return '<div class="brand">racinglines.bet</div>' if P.HOSTED else ""
+
+
 def _exname(settings, code):
     return settings["render"]["exchanges"].get(code, {}).get("name", code)
 
@@ -396,7 +402,7 @@ def html_hud(meta, rows, summary, settings, image):
     body = (f'<div class="stage" style="width:{w + side}px;min-height:{h}px">'
             f'<div class="shot" style="width:{w}px;height:{h}px;background-image:url({uri})">{"".join(labels)}</div>'
             f'<div class="side" style="width:{side}px;left:{w}px;min-height:{h}px">{head}{_summary(summary)}{rest}'
-            f'<div class="sfoot">{_e(footer(meta, settings))}<div class="brand">racinglines.bet</div></div></div></div>')
+            f'<div class="sfoot">{_e(footer(meta, settings))}{_brand()}</div></div></div>')
     return _page(body, "hud", f"{meta['event_name']} board")
 
 
@@ -431,7 +437,7 @@ def html_card(meta, rows, summary, settings):
             f'<div class="sub">The model\'s chance and the tightest prediction-market price for each line on the board, '
             f"the expected value against each, and the stake the sizing rule gives.</div>"
             f'<div class="panel sum">{_summary(summary)}</div>{"".join(panels)}'
-            f'<div class="foot"><div>{_e(footer(meta, settings))}</div><div class="brand">racinglines.bet</div></div>')
+            f'<div class="foot"><div>{_e(footer(meta, settings))}</div>{_brand()}</div>')
     return _page(body, "social card", f"{meta['event_name']} prices")
 
 
@@ -475,7 +481,7 @@ def html_agnostic(meta, rows, settings):
             f'<div class="sub">Our model\'s chance for each selection, beside the prediction markets where their '
             f"prices are tight.</div>{''.join(panels)}<div class=\"panel\">{legend}{note}</div>"
             f'<div class="foot"><div>{_e(footer(meta, settings, agnostic=True))}</div>'
-            f'<div class="brand">racinglines.bet</div></div>')
+            f'{_brand()}</div>')
     return _page(body, "social agnostic", f"{meta['event_name']} to watch")
 
 

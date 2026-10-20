@@ -769,7 +769,9 @@ def make_picks(slug, key, picks, stake=25.0):
     qs = {(q["bib"], q["market"]): q for q in snap["quotes"]}
     done = []
     for p in picks:
-        r = next(r for r in snap["riders"] if p["name"].lower() in r["name"].lower())
+        r = next((r for r in snap["riders"] if p["name"].lower() in r["name"].lower()), None)
+        if r is None:
+            raise ValueError(f"pick {p['name']!r}: no rider in the final matches that name")
         q = qs[(r["bib"], p["market"])]
         price = q["ask"] if p["side"] == "YES" else (1 - q["bid"] if q["bid"] is not None else None)
         if price is None:

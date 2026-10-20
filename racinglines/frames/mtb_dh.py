@@ -1,5 +1,6 @@
 """
-Downhill frames (L1, docs/frames.md), built from the tidy runs frame `TimedRuns.load` returns. Read-only views over
+Downhill frames (L1, docs/frames.md), built from the tidy runs frame the downhill engine's `load` returns. Read-only
+views over
 what the model already holds: no database query, and nothing about how the model loads or prices changes. Only the
 FINISH rows are used (one per rider per round; a frame loaded with splits also has S1, S2 ... rows).
 
@@ -12,7 +13,7 @@ FINISH rows are used (one per rider per round; a frame loaded with splits also h
                       reached (start-list entries, DNS included)
 
 `event_id` already names the category ("20260821_mtb_ME"), so an event is one category's race weekend.
-`official_results` reuses the model's own `actual_event_points`, with the rules `TimedRuns.results` applies: position =
+`official_results` reuses the model's own `actual_event_points`, with the rules the engine's `results` applies: position =
 the Final rank, status OK when ranked in the Final and DNF otherwise, points 0 when none. `rounds_reached` lists the
 race rounds (`[rounds] race`) in which the rider has a row (a start-list entry, so a DNS in the Final still
 reached it, as `results()`' `reached_final` counts it), in running order (`[rounds] order`).

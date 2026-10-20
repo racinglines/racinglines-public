@@ -24,7 +24,7 @@ from racinglines.web import roles as R
 from racinglines.web import accounts as ACC
 from racinglines.web import jobs as J
 from racinglines.web import users as U
-from racinglines.web.app import app, allow, audit, check_csrf, conn, data, render, rows
+from racinglines.web.app import app, allow, audit, check_csrf, conn, data, need_mcp, render, rows
 
 ADMIN = [allow("admin")]
 HIDDEN_COLUMNS = {("users", "password_hash")}
@@ -487,7 +487,7 @@ def admin_mcp(request: Request, msg: str = ""):
     return resp
 
 
-@app.post("/admin/mcp", dependencies=[Depends(check_csrf), allow("admin")])
+@app.post("/admin/mcp", dependencies=[Depends(need_mcp), Depends(check_csrf), allow("admin")])
 def admin_mcp_action(request: Request, action: str = Form(...), username: str = Form("")):
     from racinglines.mcp import auth as mcp_auth
     from racinglines.mcp import oauth
