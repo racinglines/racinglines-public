@@ -19,15 +19,33 @@ class RunTimesCore:
 
     from racinglines.models.inputs.run_times.settings import DHSettings as Settings
 
+    cfg = None                           # the schema's constants (model.cfg_from_schema); None: the import-time ones
+    round_map = {}                       # data round names -> canonical (qual, final, ...), [rounds] map
+    season_col = None                    # "season": the schema's seasons.year; None: the event date's year
+
     @classmethod
     def bind(cls, sport, schema, inputs, defaults):
-        """The class attributes of the engine bound to `sport`: its competition and Settings with [model.defaults]."""
+        """The class attributes of the engine bound to `sport`: its competition, its [points] / [rounds] constants
+        (cfg), the round-name map, the season column and Settings with [model.defaults] and the sport's categories."""
+        from dataclasses import replace
+
         from racinglines.pipelines import sweep_settings as SS
-        return dict(competition=schema["competition"]["code"], Settings=SS.with_defaults(cls.Settings, defaults))
+        from racinglines.models.inputs.run_times import model as TM
+        cfg = TM.cfg_from_schema(schema)
+        rounds = schema.get("rounds", {})
+        cats = tuple(schema["competition"]["categories"])
+        spec = [replace(s, choices=cats, default=defaults.get("category", s.default if s.default in cats else cats[0]))
+                if s.name == "category" else s for s in cls.Settings.SPEC]
+        settings = type(cls.Settings.__name__, (cls.Settings,), dict(SPEC=spec, BY={s.name: s for s in spec}, MODEL=list(cls.Settings.MODEL)))
+        return dict(competition=schema["competition"]["code"], Settings=SS.with_defaults(settings, defaults), cfg=cfg,
+                    round_map=dict(rounds.get("map", {})), season_col="season" if rounds.get("season") == "schema" else None)
+
+    def _cfg(self):
+        from racinglines.models.inputs.run_times import model as TM
+        return self.cfg or TM.default_cfg()
 
     def _rounds(self):
-        from racinglines.models.inputs.run_times import RUN_WEIGHTS
-        return [r for r in RUN_WEIGHTS if r != "practice" or "practice" in self.inputs]
+        return [r for r in self._cfg()["run_weights"] if r != "practice" or "practice" in self.inputs]
 
     def load(self, engine_url=None, competition=None, data=None):
         """The tidy runs frame (database, or `data`: a frame already loaded)."""
@@ -35,6 +53,8 @@ class RunTimesCore:
             from racinglines.db.config import get_engine
             from racinglines.db.queries import load_tidy
             data = load_tidy(get_engine(engine_url), competition=competition or self.competition, with_splits=False)
+        if self.round_map:
+            data = data.assign(round=data["round"].map(lambda r: self.round_map.get(r, r)))
         return data[data["round"].isin(self._rounds())]
 
     @staticmethod
@@ -44,11 +64,12 @@ class RunTimesCore:
     def seasons(self, data, settings, min_events=3):
         """Seasons of the category with min_events or more completed events (as `mtb_dh backtest`)."""
         from racinglines.models.inputs.run_times import completed_events, select_target
-        years = data.loc[data["category"] == settings["category"], "event_date"].astype(str).str[:4]
+        rows = data[data["category"] == settings["category"]]
+        years = rows["season"].astype(str) if self.season_col == "season" else rows["event_date"].astype(str).str[:4]
         out = []
         for y in sorted(years.unique()):
-            t = select_target(data, y, settings["category"])
-            if len(completed_events(t)) >= min_events:
+            t = select_target(data, y, settings["category"], self.season_col)
+            if len(completed_events(t, self._cfg())) >= min_events:
                 out.append(int(y))
         return out
 
@@ -61,10 +82,10 @@ class RunTimesCore:
         cat = settings["category"]
         out = []
         for season in seasons or self.seasons(data, settings):
-            target = select_target(data, season, cat)
-            target = target[target["event_id"].isin(completed_events(target))]
+            target = select_target(data, season, cat, self.season_col)
+            target = target[target["event_id"].isin(completed_events(target, self._cfg()))]
             for e in event_order(target):
-                fmt = event_format(target, e)
+                fmt = event_format(target, e, self._cfg())
                 cutoff = _event_date(target, e)
                 out.append(Event(id=e, season=int(season), cutoff=cutoff,
                                  name=str(target.loc[target["event_id"] == e, "venue"].iloc[0]) if "venue" in target else str(e),
@@ -85,10 +106,10 @@ class RunTimesCore:
             return None
         if not fmt.get("to_final", fmt.get("q1_to_final")):
             return None
-        model = fit_season_model(train, category=settings["category"], **kw)
-        field = event_starters(target, ev.id)
+        model = fit_season_model(train, category=settings["category"], cfg=self._cfg(), **kw)
+        field = event_starters(target, ev.id, self._cfg())
         with settings.applied():
-            sim = simulate_weekend(model, field, n_sims=settings["sims"], rng=rng, fmt=fmt)
+            sim = simulate_weekend(model, field, n_sims=settings["sims"], rng=rng, fmt=fmt, cfg=self._cfg())
         return O.from_timed_runs(field, sim)
 
     def results(self, data, ev):
@@ -96,9 +117,13 @@ class RunTimesCore:
         qualifier's rank, points and who reached the Final."""
         from racinglines.models.inputs.run_times import actual_event_points
         target = ev.info["target"]
-        pts = actual_event_points(target)
+        cfg = self._cfg()
+        pts = actual_event_points(target, cfg)
         pts = pts[pts["event_id"] == ev.id]
-        made = set(target.loc[(target["event_id"] == ev.id) & (target["round"] == "final"), "rider_id"])
+        fin = target[(target["event_id"] == ev.id) & (target["round"] == "final")]
+        if cfg["starters_only"]:
+            fin = fin[fin["status"].isin(("OK", "DNF", "DSQ"))]
+        made = set(fin["rider_id"])
         ids = sorted(set(pts["rider_id"]) | made)
         p = pts.set_index("rider_id").reindex(ids)
         return pd.DataFrame(dict(athlete_id=ids, position=p["final_rank"].to_numpy(),

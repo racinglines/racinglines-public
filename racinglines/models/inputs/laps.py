@@ -60,6 +60,7 @@ COMPETITION = SCHEMA["competition"]["code"]
 RUN_NAME = SCHEMA.get("model", {}).get("name", "lap_sim")   # model_runs.model of its runs (f1_sector_sim)
 from racinglines.core.stats import ranks
 from racinglines.markets.kinds import biggest_mover
+from racinglines.models import calibration as CAL
 
 HALF_LIFE_DAYS = 120.0
 RIDGE_A = 2.0          # prior weight (in "events") pulling team base pace to the field median
@@ -68,7 +69,7 @@ DRIVER_PRIOR_N = 3.0   # driver-vs-teammate offset shrinkage
 CAR_PACE = "mean"      # team sector pace from both drivers ("mean") or the team's best sectors ("best", old)
 TEAMMATE_CORR = True   # share part of the qualifying/finishing noise between teammates
 FINISH_RHO_SCALE = 1.0 # fraction of the measured teammate finishing correlation used in the simulation
-CALIB_POWER = None     # calibration power on the race-win prices (models/calibration.py, C48): None = off
+CALIB_POWER = CAL.DEFAULT       # calibration power on the race-win prices (models/calibration.py, C48); "off" or None = off
 X_CENTER, X_SCALE = 250.0, 50.0
 
 # Challenger switches (docs/f1-roadmap.md, F1-2 / F1-3). The defaults reproduce the
@@ -78,6 +79,10 @@ GRID_TERMS = False           # front-of-grid term log(grid)/log(n): True = alway
 PRE_PRACTICE_TRAIN = False   # before any practice at the event, use a finishing model trained on no-practice paces
 CHAOS = False                # race-level mixture: some simulated races are disrupted (more noise, more DNFs)
 TEAM_DNF_CORR = False        # teammates' retirements correlated at the measured rate
+GRID_NOISE = False           # finishing noise per starting-grid band (GRID_NOISE_BANDS), fitted on earlier races'
+                             # residuals, instead of one sigma for every car (variant "gridnoise")
+GRID_NOISE_BANDS = (1, 2, 4, 6, 10)   # band upper edges: P1, P2, P3-4, P5-6, P7-10, P11 and back (a priori)
+GRID_NOISE_PRIOR = 20.0      # each band's variance shrunk toward the field's with this many weighted rows (a priori)
 REG_RESET = False            # in a regulation-reset season, car data from earlier seasons count REG_RESET_WEIGHT
 REG_RESET_WEIGHT = 0.25      # set a priori (= two half-lives older), not fitted
 ROOKIE_CARRY = None          # driver offsets: once a driver's rookie season is over, that season's teammate
@@ -193,11 +198,17 @@ def prepare(res, laps, prof):
     res["start_date"] = pd.to_datetime(res["start_date"])
     res["session_ts"] = pd.to_datetime(res["session_ts"])
     laps["session_ts"] = pd.to_datetime(laps["session_ts"])
+    return res, laps, prepare_profiles(prof)
+
+
+def prepare_profiles(prof):
+    """The track profiles (PROFILE_SQL) with typed timestamps and their features as columns (also read by a
+    challenger's track features)."""
+    prof = prof.copy()
     prof["start_date"] = pd.to_datetime(prof["start_date"])
     prof["ready_ts"] = pd.to_datetime(prof["ready_ts"])
-    prof = pd.concat([prof.drop(columns="features"), pd.json_normalize(prof["features"].tolist()).drop(
+    return pd.concat([prof.drop(columns="features"), pd.json_normalize(prof["features"].tolist()).drop(
         columns=["venue"], errors="ignore")], axis=1)
-    return res, laps, prof
 
 
 # ---------------------------------------------------------------------------
@@ -553,6 +564,31 @@ class FinishModel:
     gbm: object = None     # FINISH_MODEL = "gbm": the fitted regressor (replaces coef/intercept)
     chaos: dict | None = None   # CHAOS: dict(p, sigma_calm, sigma_chaos, dnf_calm, dnf_chaos)
     rho_dnf: float = 0.0   # TEAM_DNF_CORR: latent correlation of teammates' retirements
+    noise_mult: tuple | None = None   # GRID_NOISE: noise multiplier per grid band (GRID_NOISE_BANDS), field = 1
+
+
+def grid_band(grid):
+    """Band index (0 = pole) of each starting position under GRID_NOISE_BANDS."""
+    return np.searchsorted(np.asarray(GRID_NOISE_BANDS, float), np.asarray(grid, float), side="left")
+
+
+def _noise_mult(fin, resid, w, sigma):
+    """GRID_NOISE: each grid band's residual sd over the field's (sigma), its variance shrunk toward sigma**2 by
+    GRID_NOISE_PRIOR weighted rows. fin: the classified finishers the model was fitted on (grid_used), resid and w
+    aligned to it. Only earlier races' rows reach here (fit_finish's cutoff), so the multipliers are walk-forward."""
+    if not GRID_NOISE or not sigma > 0:
+        return None
+    grid = fin["grid_used"].to_numpy(float)
+    n = fin.groupby("event_id")["athlete_id"].transform("count").to_numpy(float)
+    grid = np.where(np.isnan(grid) | (grid <= 0), n, grid)
+    band = grid_band(grid)
+    r2, wt = np.asarray(resid, float) ** 2, np.asarray(w, float)
+    out = []
+    for b in range(len(GRID_NOISE_BANDS) + 1):
+        m = band == b
+        var = (np.sum(wt[m] * r2[m]) + GRID_NOISE_PRIOR * sigma ** 2) / (np.sum(wt[m]) + GRID_NOISE_PRIOR)
+        out.append(float(np.sqrt(var) / sigma))
+    return tuple(out)
 
 
 def fit_finish(hist, before, use_track=True, alpha=1.0, no_practice=False, grid_known=None):
@@ -587,13 +623,15 @@ def fit_finish(hist, before, use_track=True, alpha=1.0, no_practice=False, grid_
     ws = pd.Series(w, index=fin.index)
     if gbm is not None:
         rw = ws.loc[resid.index]
-        return FinishModel(np.zeros(len(feats)), 0.0, float(np.sqrt(np.average(resid ** 2, weights=rw))), sigma_q,
-                           use_track, rho_q, rho_f, tuple(feats), gbm, _chaos(h, fin, resid, ws), _dnf_corr(h))
+        sigma = float(np.sqrt(np.average(resid ** 2, weights=rw)))
+        return FinishModel(np.zeros(len(feats)), 0.0, sigma, sigma_q, use_track, rho_q, rho_f, tuple(feats), gbm,
+                           _chaos(h, fin, resid, ws), _dnf_corr(h),
+                           _noise_mult(fin.loc[resid.index], resid, rw, sigma))
     sigma = float(np.sqrt(np.average(resid ** 2, weights=w)))
-    if feats == FEATURES and not (CHAOS or TEAM_DNF_CORR):
+    if feats == FEATURES and not (CHAOS or TEAM_DNF_CORR or GRID_NOISE):
         return FinishModel(m.coef_, float(m.intercept_), sigma, sigma_q, use_track, rho_q, rho_f)
     return FinishModel(m.coef_, float(m.intercept_), sigma, sigma_q, use_track, rho_q, rho_f, tuple(feats), None,
-                       _chaos(h, fin, resid, ws), _dnf_corr(h))
+                       _chaos(h, fin, resid, ws), _dnf_corr(h), _noise_mult(fin, resid, w, sigma))
 
 
 def _fit_gbm(fin, X, w, feats, holdout=0.2):
@@ -746,13 +784,16 @@ def simulate_race(fm, e, tf, n_sims=10000, rng=None, grid_known=False, points=RA
     else:
         score = fm.intercept + sum(c * feats[f] for c, f in zip(fm.coef, fm.features))
     p_dnf = e["p_dnf"].to_numpy()[None, :]
+    # GRID_NOISE: each car's noise scaled by its starting band's multiplier (from the grid it starts from in this
+    # simulation); 1.0 otherwise, so the draws and every price are unchanged with the switch off
+    mult = np.asarray(fm.noise_mult, float)[grid_band(grid)] if fm.noise_mult else 1.0
     if fm.chaos and chaos_p is not None:
         wild = rng.random((n_sims, 1)) < chaos_p
         sig = np.where(wild, fm.chaos["sigma_chaos"], fm.chaos["sigma_calm"])
-        score = score + sig * _noise(rng, 1.0, fm.rho_f, teams, n_sims)
+        score = score + sig * mult * _noise(rng, 1.0, fm.rho_f, teams, n_sims)
         p_dnf = np.clip(p_dnf * np.where(wild, fm.chaos["dnf_chaos"], fm.chaos["dnf_calm"]), 0, 0.9)
     else:
-        score = score + _noise(rng, fm.sigma, fm.rho_f, teams, n_sims)
+        score = score + mult * _noise(rng, fm.sigma, fm.rho_f, teams, n_sims)
     if fm.rho_dnf > 0:
         from scipy.stats import norm
         dnf = _noise(rng, 1.0, fm.rho_dnf, teams, n_sims) < norm.ppf(np.clip(p_dnf, 1e-6, 1 - 1e-6))

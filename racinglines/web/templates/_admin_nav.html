@@ -2,7 +2,7 @@
 {% set p = request.url.path if request else "" %}
 <nav class="subnav" aria-label="Admin sections">
 {% for href, label, match in [("/admin", "Overview", "/admin"), ("/admin/users", "Users", "/admin/users"), ("/admin/activity", "Activity log", "/admin/activity"),
-                              ("/admin/db", "Database", "/admin/db"), ("/admin/sql", "SQL console", "/admin/sql"), ("/admin/monitors", "Lab monitors", "/admin/monitors"),
+                              ("/admin/db", "Database", "/admin/db"), ("/admin/sql", "SQL console", "/admin/sql"), ("/admin/monitors", "Lab monitors", "/admin/monitors"), ("/admin/locks", "Pick locks", "/admin/locks"),
                               ("/markets/linked", "Linked markets", "/markets/linked"), ("/orders", "Order log", "/orders")]
                              + ([("/admin/mcp", "MCP", "/admin/mcp")] if has_mcp() else []) %}
 <a href="{{ href }}"{% if p == match or (match != '/admin' and p.startswith(match)) %} aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}

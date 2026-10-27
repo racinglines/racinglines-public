@@ -25,6 +25,12 @@ def money(v, sign=False, cents=True):
     return f"{s}${abs(v):,.{2 if cents else 0}f}"
 
 
+def fbucks(v, sign=False, cents=True):
+    """Fantasy money as F-bucks (owner, 2026-10-26): -302.97 -> '-Ⓕ302.97', as money() but with the circled F, which has
+    no monetary value (1:1 with dollar stablecoins like USDT)."""
+    return money(v, sign, cents).replace("$", "Ⓕ")
+
+
 def _when(value):
     """One date format: 'YYYY-MM-DD HH:MM UTC', or 'YYYY-MM-DD' when there is no time part (tz-aware values go to UTC)."""
     if isinstance(value, pd.Timestamp) and pd.isna(value):

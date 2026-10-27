@@ -38,7 +38,8 @@ How to use it:
 - overview() first: sports, seasons, the live forecast, what runs and markets exist.
 - Data: list_events / get_event, search_athletes / get_athlete, list_markets (our fair value vs every venue per
   outcome), get_market_history (exchange prices, trades, books; resampled), list_model_runs / get_model_run /
-  get_predictions, get_forecast, edge_finder (sweep results per strategy), list_diagnostics / get_diagnostic,
+  get_predictions, compare_runs (two runs paired by event, ±2 SE), get_forecast, edge_finder (sweep results per
+  strategy), list_diagnostics / get_diagnostic,
   track_record / list_positions / list_signals (paper trading), list_live_events, data_changes.
 - Fantasy trading (F$ only, your own account): fantasy_balance, fantasy_positions, fantasy_orders, fantasy_leaderboard,
   fantasy_markets, fantasy_book, and fantasy_order (one immediate-or-cancel order, as the Trade page places it).
@@ -111,12 +112,14 @@ def _json(obj):
 
 @contextmanager
 def _sports_shown():
-    """The tool call's hidden sports (tools.HIDDEN): the ones sports.is_public turns away from a non-admin caller, none for an
+    """The tool call's hidden exchanges (tools.HIDDEN_VENUES, [exchange] audience) and its hidden sports (tools.HIDDEN): the ones sports.is_public turns away from a non-admin caller, none for an
     admin or over stdio. Every tool reads them, so a hidden sport is missing from lists and 'not available' by name."""
-    token = T.HIDDEN.set(T.hidden_sports(caller()))
+    who = caller()
+    token, vtoken = T.HIDDEN.set(T.hidden_sports(who)), T.HIDDEN_VENUES.set(T.hidden_venues(who))
     try:
         yield
     finally:
+        T.HIDDEN_VENUES.reset(vtoken)
         T.HIDDEN.reset(token)
 
 
@@ -321,6 +324,15 @@ def build(jobs_worker=False, engine_url=None, oauth=False):
         return _read(T.get_model_run, run_id=run_id, path=path)
 
     @srv.tool(structured_output=False)
+    def compare_runs(run_a: int, run_b: int, kinds: str | None = None, stage: str | None = None,
+                     diagnostics: bool = False) -> str:
+        """Two saved runs scored on the same outcomes, paired by event, from their prediction records: per kind and season
+        (and pooled), log loss and Brier of each, the difference B - A with its standard error over events and whether 0
+        is outside +-2 SE. kinds: comma-separated market kinds; stage: one stage label. diagnostics=True adds the pass test's
+        tables: reliability buckets (priced vs happened per price bucket), favourite wins, and the pole-sitter win rate. Read-only."""
+        return _read(T.compare_runs, run_a=run_a, run_b=run_b, kinds=kinds, stage=stage, diagnostics=diagnostics)
+
+    @srv.tool(structured_output=False)
     def get_predictions(run_id: int, target: str | None = None, top: int = 20, standings: bool = False) -> str:
         """A run's per-athlete probabilities (win, podium, top 10, make the Final, expected points) for one target (a race;
         omit to list the targets), or with standings=true its projected championship standings."""
@@ -419,7 +431,7 @@ def build(jobs_worker=False, engine_url=None, oauth=False):
 
     @srv.tool(structured_output=False)
     def fantasy_leaderboard(limit: int = 50, offset: int = 0) -> str:
-        """The fantasy leaderboard: rank, score (ROI x sqrt(trades)), ROI, trades and P&L. Never balances."""
+        """The fantasy leaderboard: rank, score (ROI x (trades / 10)^0.3), ROI, trades and P&L. Never balances."""
         return _fantasy_read(T.fantasy_leaderboard, limit=limit, offset=offset)
 
     @srv.tool(structured_output=False)
@@ -450,7 +462,8 @@ def build(jobs_worker=False, engine_url=None, oauth=False):
         """Place one immediate-or-cancel F$ order on your own account, exactly as the Trade page does: side yes|no,
         action buy|sell, whole shares, limit_price 0.01-0.99. It is checked against the venue's live book at that
         moment (Kalshi or Polymarket; a failed fetch is refused as book_unavailable) and fills up to 10 levels at or
-        better than your limit; the rest is cancelled. F$100 per order at most,
+        better than your limit; the rest is cancelled; book_source says which book it walked ("live", or "recorded"
+        when the server runs with recorded books). F$100 per order at most,
         never more than your cash, never short. Every refusal, the rate limit (10 a minute, 200 a day) included, is
         ok=false with reason and message. client_key makes a retry safe. Nothing reaches an exchange. user: only
         over stdio (the owner naming the account)."""
@@ -556,7 +569,10 @@ def build(jobs_worker=False, engine_url=None, oauth=False):
         setting), f1_season_strategy, f1_combo (combo / same-game parlay prices for one event: event '2026-17', legs = a list
         of legs like [{"kind": "race_win", "driver": "Max Verstappen"}, {"kind": "race_fastest_lap", "driver": "Max
         Verstappen"}], several combos as {name: [legs]}, optional cutoff, variant; get_model_run(result_run_id) has
-        metrics.combos and metrics.checks), dh_scenario, dh_backtest. params: the job type's knobs (list_job_types). Returns the
+        metrics.combos and metrics.checks), dh_scenario, dh_backtest, walk_forward (sport, model: own / global / a
+        challenger the sport's schema names, seasons '2025 2026', venue, stage: a [stages] label such as 'after Quali',
+        settings: a dict of the chosen model's settings, e.g. {"covariates": "grid,qual_gap", "temperature": "fit"},
+        validated against its schema). params: the job type's knobs (list_job_types). Returns the
         job id; get_job follows it and names the model run it saved (result_run_id)."""
         return _write(T.run_job, job_type=job_type, params=params, user_id=_owner()[0])
 

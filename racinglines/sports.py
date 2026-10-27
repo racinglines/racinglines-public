@@ -31,14 +31,29 @@ from functools import cache
 from racinglines.paths import ROOT
 
 SCHEMAS = ROOT / "sports"
-SPORT_CODES = tuple(c for c in ("mtb_dh", "f1", "nascar", "motogp", "indycar", "road_cycling", "le_mans", "sailgp")
+SPORT_CODES = tuple(c for c in ("mtb_dh", "f1", "nascar", "motogp", "indycar", "road_cycling", "le_mans", "sailgp",
+                                    "fis_alpine")
                     if (SCHEMAS / f"{c}.toml").exists())   # registry / seeding order (keeps database ids stable); the
                                                           # public release ships f1 and mtb_dh (oss/manifest.toml)
 
 
 @cache
 def load(code):
-    return tomllib.loads((SCHEMAS / f"{code}.toml").read_text())
+    """sports/<code>.toml, with sports/<code>.private.toml merged over it when present (tables merge, values replace):
+    settings for models the public release leaves out (oss/manifest.toml exports the public file only)."""
+    d = tomllib.loads((SCHEMAS / f"{code}.toml").read_text())
+    extra = SCHEMAS / f"{code}.private.toml"
+    if extra.exists():
+        _merge(d, tomllib.loads(extra.read_text()))
+    return d
+
+
+def _merge(d, extra):
+    for k, v in extra.items():
+        if isinstance(v, dict) and isinstance(d.get(k), dict):
+            _merge(d[k], v)
+        else:
+            d[k] = v
 
 
 def by_competition(competition):
@@ -71,6 +86,17 @@ def declaring(model_input, default=_REQUIRED):
         raise ValueError(f"[model] inputs: {len(codes)} sports declare {model_input!r} ({codes}); its layer reads "
                          "one sport's schema at import, so exactly one may until it is bound per sport")
     return codes[0]
+
+
+def declaring_first(model_input, default=None):
+    """The first sport (SPORT_CODES order) whose [model] inputs declares `model_input`, else `default`. For an input layer
+    that still reads one schema at import for its module constants while several sports declare the input: the first
+    sport's values are the import-time defaults and every sport's core is bound to its own schema by `bind`
+    (models/inputs/run_times/core.py cfg_from_schema)."""
+    for c in SPORT_CODES:
+        if model_input in (load(c).get("model", {}).get("inputs") or ()):
+            return c
+    return default
 
 
 AUDIENCES = ("all", "admin")

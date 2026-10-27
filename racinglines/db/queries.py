@@ -8,6 +8,7 @@ rider_id is "ath:<athlete id>", so riders merged in the database (e.g. via a
 UCI ID) are one rider to the model too.
 """
 
+import logging
 import subprocess
 from pathlib import Path
 
@@ -19,7 +20,7 @@ from racinglines.db import models as m
 
 RESULTS_SQL = text("""
 SELECT r.id AS result_id, ra.id AS race_id, e.source_key, e.start_date AS event_date,
-       e.series_round, e.name AS event_name, v.slug AS venue, c.code AS category,
+       e.series_round, e.name AS event_name, v.slug AS venue, c.code AS category, s.year AS season,
        sp.code AS discipline, ro.kind AS round, a.id AS athlete_id,
        a.display_name AS rider_name, r.team, r.bib, r.nation, r.position, r.status, r.time_ms
 FROM results r
@@ -62,7 +63,7 @@ def load_tidy(engine, competition="uci_dhi_wc", with_splits=True):
     res["event_date"] = pd.to_datetime(res["event_date"]).dt.strftime("%Y-%m-%d")
     res["rider_id"] = "ath:" + res["athlete_id"].astype(str)
     res["cum_time_s"] = res["time_ms"] / 1000.0
-    base_cols = ["result_id", "race_id", "athlete_id", "event_id", "event_date", "discipline", "category",
+    base_cols = ["result_id", "race_id", "athlete_id", "event_id", "event_date", "season", "discipline", "category",
                  "round", "rider_id", "rider_name", "team", "bib", "nation", "venue", "series_round",
                  "event_name", "source_key"]
     finish = res[base_cols + ["cum_time_s", "position", "status"]].rename(columns={"position": "rank_at_split"})
@@ -87,16 +88,23 @@ def load_tidy(engine, competition="uci_dhi_wc", with_splits=True):
 
 
 def code_version():
-    """The checkout's git describe (commit, "-dirty" when the tree has changes), as model_runs.code_version records it;
+    """Git describe plus tracked-change (-dirty) and untracked-file (-untracked) markers;
     None when git is unavailable."""
     return _git_commit()
 
 
 def _git_commit():
     try:
-        return subprocess.run(["git", "describe", "--always", "--dirty"], capture_output=True, text=True,
-                              cwd=Path(__file__).resolve().parents[2], timeout=5).stdout.strip() or None
-    except Exception:
+        root = Path(__file__).resolve().parents[2]
+        version = subprocess.run(["git", "describe", "--always", "--dirty"], capture_output=True, text=True,
+                                 cwd=root, timeout=5, check=True).stdout.strip()
+        status = subprocess.run(["git", "status", "--porcelain", "--untracked-files=normal"],
+                                capture_output=True, text=True, cwd=root, timeout=5, check=True).stdout
+        if version and any(line.startswith("?? ") for line in status.splitlines()):
+            version += "-untracked"
+        return version or None
+    except (OSError, subprocess.SubprocessError) as ex:
+        logging.getLogger(__name__).warning("Could not determine checkout code version: %s", ex)
         return None
 
 

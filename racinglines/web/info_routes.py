@@ -11,7 +11,7 @@ import pandas as pd
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from racinglines.paths import CHECKOUT, HOME
+from racinglines.paths import CHECKOUT, HOME, HOSTED
 from racinglines.web import audience as A
 from racinglines.web import roles as R
 from racinglines.web.app import ANY, PRO, allow, app, audit, check_csrf, conn, data, render, rows  # noqa: F401
@@ -79,6 +79,34 @@ def pitch():
     return FileResponse(ROOT / "pitch.html", media_type="text/html")
 
 
+
+
+# Search engines (SEO, 2026-10-21): crawl only the public pages. Signed-in pages also carry a noindex meta (base.html).
+SITE_URL = "https://racinglines.bet"
+PUBLIC_PAGES = ("/", "/racinglines101", "/docs/quickstart/term")
+
+
+@app.get("/robots.txt")
+def robots_txt():
+    """Public by exact path. Off the hosted site (the public package) it disallows everything."""
+    from fastapi.responses import PlainTextResponse
+    if not HOSTED:
+        return PlainTextResponse("User-agent: *\nDisallow: /\n")
+    return PlainTextResponse("User-agent: *\nDisallow: /admin\nDisallow: /mybets\nDisallow: /lab\nDisallow: /api\n"
+                             f"Allow: /\n\nSitemap: {SITE_URL}/sitemap.xml\n")
+
+
+@app.get("/sitemap.xml")
+def sitemap_xml():
+    """The public pages, for search engines (hosted site only)."""
+    from fastapi.responses import Response
+    if not HOSTED:
+        raise HTTPException(404)
+    f = SITE / "public-pages.txt"                   # the public docs pages (web/app.py public_doc)
+    docs = [f"/docs/{ln.strip()}" for ln in f.read_text().splitlines()] if f.is_file() else []
+    urls = "".join(f"<url><loc>{SITE_URL}{p}</loc></url>" for p in dict.fromkeys([*PUBLIC_PAGES, *docs]))
+    return Response('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+                    f"{urls}</urlset>\n", media_type="application/xml")
 
 
 @app.get("/llms.txt")

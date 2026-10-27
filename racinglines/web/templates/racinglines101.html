@@ -1,5 +1,8 @@
 {% extends "base_public.html" %}
-{% block title %}Racinglines 101{% endblock %}
+{% block title %}Racinglines 101 · how our race prediction model and trading work{% endblock %}
+{% block meta %}<meta name="description" content="How racinglines works: a bottom-up race simulation turns lap and timing data into win, podium and head-to-head odds, then trades them against prediction markets and scores every forecast by Brier score and log loss.">
+{% if site_url %}<link rel="canonical" href="{{ site_url }}/racinglines101"><meta property="og:url" content="{{ site_url }}/racinglines101">{% endif %}
+<meta property="og:type" content="website"><meta property="og:site_name" content="racinglines"><meta property="og:title" content="{{ self.title() }}"><meta property="og:description" content="How racinglines works: a bottom-up race simulation turns lap and timing data into win, podium and head-to-head odds, then trades them against prediction markets and scores every forecast by Brier score and log loss."><meta name="twitter:card" content="summary">{% endblock %}
 {% block main_class %}r101 r-seq{% endblock %}
 {% block content %}
 <p class="crumbs"><a href="/">racinglines</a> › 101</p>
@@ -344,12 +347,12 @@ was sharper (0.1439 against our 0.1627). That gap is why the paper-trading seaso
 <h2 class="term-part">Using the app</h2>
 <section class="r-sec" id="app">
 <h3>The web app</h3>
-<p>This site, laid out for the fantasy league alpha. Sign up and you get F$1,000 of fantasy money and four tabs; <b>Try the demo</b> shows the same tabs, and can look but not trade. No real money moves, and nothing reaches an exchange.</p>
+<p>This site, laid out for the fantasy league alpha. Sign up and you get Ⓕ1,000 of fantasy money and four tabs; <b>Try the demo</b> shows the same tabs, and can look but not trade. No real money moves, and nothing reaches an exchange.</p>
 <div class="scroll"><table>
 <thead><tr><th class="l">Tab</th><th class="l">What's on it</th></tr></thead><tbody>
 <tr><td class="l"><b>Markets</b></td><td class="l">The prediction markets now, with our fair probabilities next to each venue's prices, for F1, NASCAR and MotoGP</td></tr>
-<tr><td class="l"><b>Trade</b></td><td class="l">Pick an F1 market, see its recorded order book, and buy or sell in F$, one immediate-or-cancel order at a time</td></tr>
-<tr><td class="l"><b>History</b></td><td class="l">Your F$, every trade and order (refused ones with the reason), your strategy's trades, and the leaderboard</td></tr>
+<tr><td class="l"><b>Trade</b></td><td class="l">Pick an F1 market, see its recorded order book, and buy or sell in Ⓕ, one immediate-or-cancel order at a time</td></tr>
+<tr><td class="l"><b>History</b></td><td class="l">Your Ⓕ, every trade and order (refused ones with the reason), your strategy's trades, and the leaderboard</td></tr>
 <tr><td class="l"><b>Lab</b></td><td class="l">Follow one of five strategy styles and choose its sizing; its track record and positions; backtests, the Edge Finder and replays</td></tr>
 </tbody></table></div>
 </section>

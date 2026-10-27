@@ -5,8 +5,9 @@ The simulation's win chances p_i become p_i^a / sum_j p_j^a, and every simulated
 q(winner) / p(winner) so the other markets priced from the same draws (podium, top 10, head-to-head, constructor)
 move with the win price instead of drifting apart from it. a > 1 sharpens the favourites; a = 1 changes nothing.
 
-The power comes from the `calib_power` setting (pipelines/sweep_settings.py): unset is off (no key changes), a number
-is that power at every stage, and "walk_forward" reads sports/<sport>/calibration.toml, where each [[fit]] holds the
+The power comes from the `calib_power` setting (pipelines/sweep_settings.py). F1's default is DEFAULT: "walk_forward"
+on the hosted service since 2026-10-21 (docs/f1-roadmap.md decision log), "off" in the PyPI package; "off" is the uncalibrated price and keeps the keys it had before
+(saved runs without the setting read as off). A number is that power at every stage, and "walk_forward" reads sports/<sport>/calibration.toml, where each [[fit]] holds the
 power fitted on the races finished before its `from` date, separately for stages with the starting grid known
 (`grid`) and before it (`nogrid`). A cutoff before the first fit gets a = 1.
 
@@ -15,6 +16,8 @@ power fitted on the races finished before its `from` date, separately for stages
     win_power(p, a)                             p^a renormalised (the target win chances)
 """
 
+import importlib
+import importlib.util
 import tomllib
 from datetime import date, datetime
 from functools import cache
@@ -24,6 +27,11 @@ import numpy as np
 from racinglines.paths import ROOT
 
 WALK_FORWARD = "walk_forward"
+OFF = "off"
+# F1's default (owner, 2026-10-21): walk_forward on the hosted service (racinglines/hosted.py, private only), off in
+# the PyPI package, which leaves that module out (oss/manifest.toml)
+DEFAULT = (importlib.import_module("racinglines.hosted").CALIB_POWER
+           if importlib.util.find_spec("racinglines.hosted") else OFF)
 
 
 @cache
@@ -36,10 +44,13 @@ def table(sport):
 
 
 def parse(value):
-    """The setting's canonical text: None (off), "walk_forward", or a power such as "2.0" (1 to 10)."""
+    """The setting's canonical text: None (blank: the setting's default), "off", "walk_forward", or a power such as
+    "2.0" (1 to 10)."""
     v = str(value).strip().lower().replace("-", "_")
-    if v in ("", "none", "off"):
+    if v == "":
         return None
+    if v in ("none", "off"):          # explicit off: kept apart from blank, so it survives the walk_forward default
+        return OFF
     if v == WALK_FORWARD:
         return v
     try:
@@ -77,7 +88,7 @@ def _day(cutoff):
 
 def power(setting, sport, cutoff, grid_known):
     """The calibration power for a price at `cutoff`, or None when calibration is off (setting unset or a = 1)."""
-    if setting in (None, ""):
+    if setting in (None, "", OFF):
         return None
     if str(setting) != WALK_FORWARD:
         a = float(setting)

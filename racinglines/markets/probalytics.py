@@ -307,7 +307,15 @@ class _Tape:
             return None
         return float(r.get("ask_size") or 0.0), float(r.get("bid_size") or 0.0)
 
-    def load_books(self, conn, start, end):
+    def touch_sizes(self, token, t):
+        """(bid_size, ask_size) at the touch as of t, or None when there is no snapshot (the trades-out columns)."""
+        r = self._book_at(self._book_key(token), t)
+        if r is None:
+            return None
+        f = lambda v: None if v is None or pd.isna(v) else float(v)   # noqa: E731
+        return f(r.get("bid_size")), f(r.get("ask_size"))
+
+    def load_books(self, conn, start, end, times=None):
         """The books came with the tape (touch_depth reads them)."""
 
     def book_at(self, token, t):

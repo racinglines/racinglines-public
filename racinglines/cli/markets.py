@@ -283,6 +283,11 @@ def schema_exchange(code, db, argv, sport="f1"):
     if sport not in exchanges.sports(code):
         print(f"--sport {sport}: {code} lists {', '.join(exchanges.sports(code))} (exchanges/{code}.toml)", file=sys.stderr)
         return 2
+    schema = exchanges.load(code)["exchange"]
+    if schema.get("record_requires_switch") and not exchanges.enabled(code):
+        # the recorder runs every pass: a venue still switched off is a clean no-op, not a failed pass
+        print(f"{code}: {schema.get('switch')} is not set, nothing done")
+        return 0
     ap = argparse.ArgumentParser(prog=f"racinglines markets --exchange {code} --sport {sport}")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("sync")

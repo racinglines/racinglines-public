@@ -50,6 +50,7 @@ RACE_KINDS = ("race_win", "race_podium", "race_top5", "race_top10", "race_pole",
 SPRINT_KINDS = ("race_sprint_win", "race_sprint_pole")
 SEASON_KINDS = ("champion", "constructors_champion")
 EXCHANGES = ("kalshi", "polymarket")
+VENUE_NAME = {"kalshi": "Kalshi", "polymarket": "Polymarket"}
 REASONS = ("bad_input", "not_a_member", "sport_not_tradable", "kind_not_tradable", "market_closed", "session_started", "no_schedule",
            "book_unavailable", "stale_book", "no_liquidity", "over_order_cap", "insufficient_balance",
            "opposite_side_held", "sell_exceeds_position")
@@ -217,6 +218,14 @@ def book_getter(engine, link):
     if books_mode() == "live" and link is not None and link.get("exchange") in EXCHANGES:
         return lambda tok: live_book(link["exchange"], tok)
     return lambda tok: latest_book(books_engine(engine), tok)
+
+
+def book_source(link, get_book=None):
+    """Which book an order walked, for its confirmation line and its order row's `book`: "live" (the venue's own, read
+    just now: book_getter in books_mode "live"), "recorded" (the latest recorded snapshot) or "injected" (tests)."""
+    if get_book is not None:
+        return "injected"
+    return "live" if books_mode() == "live" and link is not None and link.get("exchange") in EXCHANGES else "recorded"
 
 
 def quote_getter(engine, link):
@@ -428,13 +437,13 @@ def _existing(conn, user_id, client_key):
     """The result of an order this account already placed with this client key (a retry), or None."""
     if not client_key:
         return None
-    o = conn.execute(text("""SELECT id, status, reject_reason FROM accounts.fantasy_orders
+    o = conn.execute(text("""SELECT id, status, reject_reason, book->>'source', exchange FROM accounts.fantasy_orders
                              WHERE user_id = :u AND client_key = :k"""), dict(u=user_id, k=client_key)).first()
     if o is None:
         return None
     fills = conn.execute(text("SELECT price, shares, fee FROM accounts.fantasy_fills WHERE order_id = :o ORDER BY id"),
                          dict(o=o[0])).all()
-    return dict(ok=o[1] != "rejected", order_id=o[0], status=o[1], reason=o[2], repeat=True,
+    return dict(ok=o[1] != "rejected", order_id=o[0], status=o[1], reason=o[2], repeat=True, book_source=o[3], exchange=o[4],
                 message=TEXT.get(o[2], "") if o[2] else "", fills=[(float(p), float(n)) for p, n, _ in fills],
                 fee=float(sum(f for _, _, f in fills)))
 
@@ -565,6 +574,7 @@ def place(engine, user, link_id, side, action, shares, limit, client_key=None, n
     # 2. the book, with no database lock held (_levels): the venue's own, live, unless injected or books_mode()
     try:
         lv, snap = _levels(get_book or book_getter(engine, link), link, side, action, now)
+        snap["source"] = book_source(link, get_book)
     except Rejected as ex:
         with engine.begin() as c:
             out = _reject(c, user, lid, link, side, action, n, p, ex.reason, client_key)
@@ -620,7 +630,8 @@ def place(engine, user, link_id, side, action, shares, limit, client_key=None, n
                 fees = accounts.fantasy_positions.fees + :f, updated_at = now()"""),
             dict(u=user["id"], l=lid, x=link["exchange"], h=new_held, c=cents(new_cost), f=cents(f)))
         _audit(c, user, "fantasy_order", order_id=oid, link=lid, side=side, order=action, fills=fills, fee=f)
-    return dict(ok=True, order_id=oid, status=status, reason=None, fills=fills, fee=f,
+    return dict(ok=True, order_id=oid, status=status, reason=None, fills=fills, fee=f, book_source=snap["source"],
+                exchange=link["exchange"],
                 message="", position=dict(side=side, shares=new_held, cost=round(new_cost, 2)))
 
 

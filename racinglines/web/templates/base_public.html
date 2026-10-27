@@ -2,6 +2,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}racinglines{% endblock %}</title>
+{% block meta %}<meta name="robots" content="noindex">{% endblock %}
 <link rel="stylesheet" href="/static/style.css?v={{ css_v() }}"><script src="/static/app.js?v={{ css_v() }}" defer></script>{% block head %}{% endblock %}</head>
 <body><main class="{% block main_class %}login{% endblock %}">
 {% block content %}{% endblock %}

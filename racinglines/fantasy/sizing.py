@@ -97,13 +97,19 @@ def sized(p, bank, kelly=None):
     kelly None ("standard"): stakes x bank.scale, the weight kept (p.scale = weight x bank.scale).
     kelly a fraction (the player's choice, profiles.sizing_of, 0.10 to 1.00): the existing Kelly sizing
     (sizing.target_shares) with bankroll = the strategy bankroll (never below 0), so the stake is kelly x f* x bankroll
-    x weight, still capped per market at max_stake x bank.scale x weight."""
+    x weight.
+    No per-market cap for a player (owner, 2026-10-25 20:52Z: "lift all per market sizing caps, let the sizing be
+    determined strictly from: bankroll size when bets are placed, percieved edge per bet, and the kelly sizing defined
+    by the user's strategy"): max_stake becomes the grant, so max_stake x bank.scale is the whole bankroll and only
+    max_deployed (the bankroll less what other events hold) limits a stake. The profile's own max_stake ($50 by
+    default) capped nearly every trade at F$1,000, so every sizing choice bought the same stakes."""
     if bank is None:
         return p
     weight = p.scale
     cap = bank.cap * weight
     if p.max_deployed is not None:
         cap = min(cap, p.max_deployed)
+    p = replace(p, max_stake=bank.start)
     if kelly is None:
         return replace(p, scale=weight * bank.scale, max_deployed=cap)
     return replace(p, kelly=kelly, bankroll=max(bank.balance, 0.0), max_stake=p.max_stake * bank.scale,

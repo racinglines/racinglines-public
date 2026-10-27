@@ -48,6 +48,7 @@ render (FILE = a book file, priced like `price`; or a cycling price output folde
 --json-in):
     --style hud|card|agnostic   --image PNG   --out PATH.html   --png   --chrome PATH   --json-in PRICED.json
     --bank --kelly --cap --min-ev --scale --drop-under    override markets/books.toml [stake]
+    --require model                                       size on the model's EV alone (no exchange quotes)
 new:
     --from-text TXT --venue CODE --event KEY --odds FORMAT --out FILE.toml [--sport CODE] [--currency USD]
 """
@@ -85,6 +86,9 @@ def _parser():
                      ("min-ev", "minimum EV against each required price"), ("scale", "multiply every stake"),
                      ("drop-under", "drop stakes under this, after --scale")):
         r.add_argument(f"--{opt}", type=float, default=None, help=hlp + " (default: markets/books.toml [stake])")
+    r.add_argument("--require", nargs="+", choices=["model", "market"], default=None,
+                   help="the prices the EV must clear (default: markets/books.toml [stake] require = model and market); "
+                        "--require model sizes on the model alone, for a sport with no exchange quotes")
     n = sub.add_parser("new", help="A book file draft from loose text lines.")
     n.add_argument("--from-text", required=True, help="a text file, one bet per line ('-' for stdin)")
     n.add_argument("--venue", required=True, help="the venue code, e.g. book_a")
@@ -226,6 +230,8 @@ def _render(args):
     from racinglines.books import slips as B
     overrides = {k.replace("-", "_"): getattr(args, k.replace("-", "_"))
                  for k in ("bank", "kelly", "cap", "min-ev", "scale", "drop-under")}
+    if getattr(args, "require", None):
+        overrides["require"] = list(args.require)
     st = R.load_settings(overrides)
     src = Path(args.file) if args.file else None
     book = None

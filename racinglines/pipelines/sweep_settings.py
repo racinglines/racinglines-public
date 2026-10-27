@@ -19,6 +19,8 @@ import json
 from contextlib import contextmanager
 from dataclasses import dataclass
 
+from racinglines.models import calibration as CAL
+
 STAGES = ("pre-weekend", "after FP1", "after FP2", "after FP3", "after SQ", "after Sprint", "after Quali")
 KINDS = ("race_win", "race_podium", "race_h2h", "race_constructor_top", "race_pole")
 OPT_KINDS = ("race_top10",)          # opt-in market kinds: selectable in `market_kinds`, never in its default
@@ -64,10 +66,11 @@ SETTINGS = [
     Setting("teammate_corr", "model", "Teammates share noise", "bool", True, target="model.TEAMMATE_CORR"),
     Setting("finish_rho_scale", "model", "Teammate finish correlation scale", "float", 1.0, 0, 2,
             target="model.FINISH_RHO_SCALE"),
-    Setting("calib_power", "model", "Win-price calibration power", "text", None,
+    Setting("calib_power", "model", "Win-price calibration power", "text", CAL.DEFAULT,
             help="Sharpen (above 1) the race-win prices as p^a, resampling the sims so every market follows "
-                 "(C48). A number, or walk_forward: the power fitted on earlier races only "
-                 "(sports/f1/calibration.toml). Empty = off.", target="model.CALIB_POWER"),
+                 "(C48). walk_forward (the hosted default since 2026-10-21): the power fitted on earlier races only "
+                 "(sports/f1/calibration.toml); a number from 1 to 10; off for the uncalibrated prices (their keys as before).",
+            target="model.CALIB_POWER"),
     Setting("reset_weight", "model", "Regulation-reset carry-over", "float", 0.25, 0, 1,
             help="With the reset switch: weight of earlier seasons' car data.", target="model.REG_RESET_WEIGHT"),
     Setting("seed", "model", "Monte Carlo seed", "int", None, 0, 2**31 - 1,
@@ -174,8 +177,8 @@ def _coerce(s, v):
     if s.unset is not None and v == s.unset:
         return s.default
     if s.name == "calib_power":                      # off / walk_forward / a power (models/calibration.py)
-        from racinglines.models import calibration as CAL
-        return CAL.parse(v)
+        v = CAL.parse(v)
+        return s.default if v is None else v
     if s.type == "float":
         return float(v)
     if s.type == "int":
@@ -246,8 +249,16 @@ class Settings(dict):
         """Settings of a saved sweep, including ones saved before this schema existed."""
         p = dict(params or {})
         if isinstance(p.get("settings"), dict):
-            return cls.from_dict(p["settings"], strict=False)
-        return cls.from_dict({k: v for k, v in p.items() if cls.ALIASES.get(k, k) in cls.BY}, strict=False)
+            return cls.from_dict(cls._saved_off(p["settings"]), strict=False)
+        return cls.from_dict(cls._saved_off({k: v for k, v in p.items() if cls.ALIASES.get(k, k) in cls.BY}), strict=False)
+
+    @classmethod
+    def _saved_off(cls, d):
+        """A run saved without a calibration power was priced uncalibrated: read it as off, not today's default."""
+        s = cls.BY.get("calib_power")
+        if s is None or s.default is None or str(d.get("calib_power") or "").strip():
+            return d
+        return {**d, "calib_power": "off"}
 
     def changed(self):
         """{name: value} of the settings that differ from the defaults."""
@@ -255,9 +266,9 @@ class Settings(dict):
 
     def _key(self, names):
         names = [k for k in names if not (self.BY[k].default is None and self[k] is None)]   # unset optionals
+        names = [k for k in names if not (k == "calib_power" and self[k] == "off")]           # off keys as before C48
         vals = {k: self[k] for k in names}
         if vals.get("calib_power") == "walk_forward":         # the fitted table is part of the pricing
-            from racinglines.models import calibration as CAL
             vals["calib_power"] = f"walk_forward@{CAL.table_hash(getattr(self, 'CALIB_SPORT', 'f1'))}"
         blob = json.dumps(vals, sort_keys=True, default=list)
         return hashlib.sha1(blob.encode()).hexdigest()[:12]
@@ -351,6 +362,8 @@ def add_arguments(parser, cls=None, skip=()):
         # argparse formats help with %, so a literal % (bankroll_growth's "+300%") must be doubled
         hlp = f"{s.label} (default {dflt})." + (f" {s.help}" if s.help else "")
         kw = dict(default=None, help=hlp.replace("%", "%%"))
+        if s.type == "bool":                     # `--grid-sim` alone means true; `--grid-sim false` still works
+            kw.update(nargs="?", const="true")
         parser.add_argument("--" + s.name.replace("_", "-"), **kw)
 
 

@@ -436,6 +436,9 @@ def race_markets(venue, race_links, sims, res, stages, min_volume_24h, thin_dept
             q = venue.quote(link["token_id"], t)
             if q is not None:
                 stage.update(bid=q[0], ask=q[1])
+                sz = venue.touch_sizes(link["token_id"], t) if hasattr(venue, "touch_sizes") else None
+                if sz is not None:
+                    stage.update(bid_size=sz[0], ask_size=sz[1])
             if thin_depth and not liquid and price is not None and 0 < price < 1 and f is not None and open_ \
                     and coherent.get((kind, lab), True):
                 d = venue.touch_depth(link["token_id"], t)

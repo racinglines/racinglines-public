@@ -143,17 +143,18 @@ def board_page(request: Request, msg: str = "", c=Depends(conn)):
     from racinglines.markets import disagree as D
     hide = A.hidden_comps(user)                                     # sports this user doesn't see ([sport] audience)
     hide |= SP.off_board_competitions()                             # and sports off the Markets page ([sport] markets_board)
-    calendar = [r for r in V.calendar_rows(c) if r["sport"] not in hide]
+    hv = A.hidden_venues(user)                                      # and exchanges that are admin-only ([exchange] audience)
+    calendar = [r for r in V.calendar_rows(c, *([hv] if hv else [])) if r["sport"] not in hide]
     cal_sports = sorted({(r["sport"], r["sport_name"]) for r in calendar}, key=lambda x: V.SPORT_ORDER.get(x[0], 9))
     cal_exchanges = sorted({x for r in calendar for x in r["exchanges"]})
     cal_events = [dict(sport=r["sport"], title=r["title"], status=r["status"], exchanges=r["exchanges"], url=r["url"],
                        date=None if r["date"] is None or pd.isna(r["date"]) else pd.Timestamp(r["date"]).isoformat())
                  for r in calendar]
     from racinglines.web import sport_status as SS                  # RACINGLINES_SPORT_STATUS=1: every sport's status
-    return render(request, "board.html", sports=B.board(c, _maker(user), detail=False, hide=hide), h=B.headline(c, _maker(user)), kalshi=V.KALSHI_VENUE,
+    return render(request, "board.html", sports=B.board(c, _maker(user), detail=False, hide=hide, hide_venues=hv), h=B.headline(c, _maker(user)), kalshi=V.KALSHI_VENUE,
                   disagree=D.panel(c) if D.ON["on"] else None,
-                  sport_status=SS.status(c, hide) if SS.enabled() else None, show_paper=True,
-                  recorders=B.recorder_status(c, [v.code for v in V.EXCHANGES if v.code != "kalshi" or V.KALSHI_VENUE]),
+                  sport_status=SS.status(c, hide, hv) if SS.enabled() else None, show_paper=True,
+                  recorders=B.recorder_status(c, [v.code for v in A.venues(user, V.EXCHANGES) if v.code != "kalshi" or V.KALSHI_VENUE]),
                   calendar=calendar, cal_sports=cal_sports, cal_exchanges=cal_exchanges, cal_events=cal_events)
 
 
@@ -238,7 +239,8 @@ def race_page(request: Request, race_id: int, msg: str = "", c=Depends(conn)):
     user = request.state.user
     if R.is_basic(user):
         return RedirectResponse("/markets", status_code=303)
-    info, pricing, df = V.event_matrix(c, race_id, _maker(user))
+    hv = A.hidden_venues(user)
+    info, pricing, df = V.event_matrix(c, race_id, _maker(user), hv)
     if info is None:
         raise HTTPException(404)
     A.guard(user, info["competition"])
@@ -259,10 +261,10 @@ def race_page(request: Request, race_id: int, msg: str = "", c=Depends(conn)):
     diag_runs = rows(data.q(c, """SELECT id, left(params->>'cutoff', 16) AS cutoff FROM model_runs
                                   WHERE kind = 'diagnostic' AND params->>'event_key' = :k ORDER BY id""",
                             k=info["source_key"]))
-    charts = [(v, ch) for v in V.EXCHANGES if v.status == "live" for ch in [_race_chart(c, info, pricing, df, v.code)] if ch]
+    charts = [(v, ch) for v in A.venues(user, V.EXCHANGES) if v.status == "live" for ch in [_race_chart(c, info, pricing, df, v.code)] if ch]
     return render(request, "race.html", info=info, pricing=pricing, groups=_groups(df), fav=fav, winner=winner,
-                  results=results, completed=completed, season=False, venue_sum=V.venue_summary(df), mine=B._mine(df),
-                  exchanges=V.EXCHANGES, has_pm=bool(len(df) and df["pm_mid"].notna().any()),
+                  results=results, completed=completed, season=False, venue_sum=V.venue_summary(df, hv), mine=B._mine(df),
+                  exchanges=A.venues(user, V.EXCHANGES), has_pm=bool(len(df) and df["pm_mid"].notna().any()),
                   charts=charts, countdown=B._countdown(info["start_date"]),
                   kalshi=V.KALSHI_VENUE,
                   diag_runs=diag_runs, msg=msg, kind_label=V.KIND_LABEL, placeholders=V.placeholders(c, race_id),
@@ -273,15 +275,16 @@ def race_page(request: Request, race_id: int, msg: str = "", c=Depends(conn)):
 @app.get("/seasons/{code}", response_class=HTMLResponse, dependencies=[allow(*PRO)])
 def season_page(request: Request, code: str, c=Depends(conn)):
     A.guard(request.state.user, code)
-    info, pricing, df = V.season_matrix(c, code, _maker(request.state.user))
+    hv = A.hidden_venues(request.state.user)
+    info, pricing, df = V.season_matrix(c, code, _maker(request.state.user), hv)
     if info is None:
         raise HTTPException(404)
     info = dict(info, status=None, start_date=None, name="Season-long markets", event_id=None, race_id=0, source_key=None)
     champs = df[df["kind"] == "champion"] if len(df) else df
     return render(request, "race.html", info=info, pricing=pricing, groups=_groups(df),
                   fav=rows(champs.head(1))[0] if len(champs) else None, winner=None, results=[], completed=False,
-                  season=True, strategy=latest_season_strategy(c, code), venue_sum=V.venue_summary(df), mine=B._mine(df), exchanges=V.EXCHANGES,
-                  kalshi=V.KALSHI_VENUE, charts=[],
+                  season=True, strategy=latest_season_strategy(c, code), venue_sum=V.venue_summary(df, hv), mine=B._mine(df),
+                  exchanges=A.venues(request.state.user, V.EXCHANGES), kalshi=V.KALSHI_VENUE, charts=[],
                   has_pm=bool(len(df) and df["pm_mid"].notna().any()), countdown="", diag_runs=[],
                   msg="", kind_label=V.KIND_LABEL, quote_kinds=[], calibration=_calibration(code))
 
@@ -1069,7 +1072,8 @@ def live_page(request: Request, partial: int = 0, t: str = "", event: str = ""):
     every market's quotes. Makers also see the model and the book; takers see their picks' P&L. Once the
     event is over it is a replay: the page as it was at any saved snapshot (t, e.g. 20260927T223221; default
     the end), stepped or played through on a timeline."""
-    ctx = live_context(event, t, not R.is_basic(request.state.user), partial, A.hidden(request.state.user))
+    ctx = live_context(event, t, not R.is_basic(request.state.user), partial, A.hidden(request.state.user),
+                       A.hidden_venues(request.state.user))
     return render(request, "live_partial.html" if partial else "live.html", **ctx)
 
 
@@ -1083,9 +1087,10 @@ def live_f1_page(request: Request):
 
 
 
-def live_context(event="", t="", maker=True, partial=0, hide=()):
+def live_context(event="", t="", maker=True, partial=0, hide=(), hide_venues=()):
     """The Live tab's template context: the registry's event, live or as of a replay snapshot, with the
-    sport's body from its adapter (no database: the run folder only). hide: sport codes left out ([sport] audience)."""
+    sport's body from its adapter (no database: the run folder only). hide: sport codes left out ([sport] audience);
+    hide_venues: exchange codes whose prices are stripped from the snapshot ([exchange] audience)."""
     from urllib.parse import quote
 
     from racinglines.pipelines import live as LV
@@ -1102,6 +1107,10 @@ def live_context(event="", t="", maker=True, partial=0, hide=()):
         snap, picks, hist = LV.load_at(ev["run"], t)
     else:
         snap, picks, hist = LV.load(ev["run"]) if ev else (None, [], [])
+    if snap and hide_venues:        # snapshots are written for every venue; an admin-only one is dropped at read time
+        snap = dict(snap, markets=[dict(m, exchange_prices=[x for x in m.get("exchange_prices") or []
+                                                            if x.get("code") not in hide_venues])
+                                   for m in snap.get("markets") or []])
     if snap and ev and ev["sport"] == "f1":
         snap = dict(snap, title=ev["title"])            # snapshots keep the name they were written with
     selected = next((x for x in reversed(times) if x <= t), times[0]) if times and t else (times[-1] if times else None)

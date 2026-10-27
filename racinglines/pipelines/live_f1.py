@@ -55,8 +55,9 @@ KIND_LABEL = {"race_win": "Winner", "race_podium": "Podium", "race_pole": "Pole 
 FIELD = {"race_win": "win_prob", "race_podium": "podium_prob"}
 GROUP_TARGET = {"race_win": 1.0, "race_podium": 3.0, "race_pole": 1.0, "race_constructor_top": 1.0}
 VIEW_GROUPS = KINDS + ("race_props", "race_fastest_lap")      # the Live tab: the yes/no props share one card
-EXCHANGE_LABELS = {"polymarket": "Polymarket", "kalshi": "Kalshi", "coinbase": "Coinbase", "og": "OG.com"}
-EXCHANGE_ORDER = ("polymarket", "kalshi", "coinbase", "og")
+EXCHANGE_LABELS = {"polymarket": "Polymarket", "kalshi": "Kalshi", "coinbase": "Coinbase", "og": "OG.com",
+                   "prophetx": "ProphetX"}
+EXCHANGE_ORDER = ("polymarket", "kalshi", "coinbase", "og", "prophetx")
 
 
 def _utc(t):

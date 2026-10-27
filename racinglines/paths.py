@@ -60,3 +60,4 @@ def rel(path):
 F1_RAW = raw("f1", "fastf1")
 DH_RAW = raw("mtb_dh", "chronorace")
 NASCAR_RAW = raw("nascar", "cf")
+FIS_ALPINE_RAW = DATA / "raw" / "fis_alpine"            # one source (fis-ski.com/DB), so no <source> level

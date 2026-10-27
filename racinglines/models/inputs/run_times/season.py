@@ -170,10 +170,17 @@ def rank_moves(current_points, riders, sim_points):
     return out[out["rider_id"].isin(riders)]
 
 
-def completed_events(target):
-    """Target events whose final has results (upcoming / in-progress ones don't)."""
+def completed_events(target, cfg=None):
+    """Target events whose final has results (upcoming / in-progress ones don't). With a cfg whose sport has
+    single-run events (starters_only, model.event_format "single_run"): an event with no final round at all whose
+    qualifier has results is completed too (one timed run decided it)."""
     fin = target[(target["round"] == "final") & (target["sector_id"] == "FINISH") & (target["status"] == "OK")]
-    return set(fin["event_id"])
+    done = set(fin["event_id"])
+    if cfg and cfg.get("starters_only"):
+        has_final = set(target.loc[target["round"] == "final", "event_id"])
+        q = target[(target["round"] == "qual") & (target["sector_id"] == "FINISH") & (target["status"] == "OK")]
+        done |= set(q["event_id"]) - has_final
+    return done
 
 
 def weekend_prior(model, event_rows, riders, practice_sd_mult=1.5, max_iqr=0.08):

@@ -383,7 +383,7 @@ def run(engine, sport, seasons=None, venue="kalshi", taker=None, min_volume_24h=
 
 
 def summarize(races_df, trades, calib, params):
-    trades = pd.concat(trades, ignore_index=True) if trades else pd.DataFrame()
+    trades = RB.core(pd.concat(trades, ignore_index=True)) if trades else pd.DataFrame()
     totals = {}
     for mode in TAKER_MODES:
         col = f"{mode}_pnl"
@@ -402,7 +402,7 @@ def _buy_all(out, ba_trades):
     the tape's count of markets it bought."""
     from racinglines.markets.strategies import buy_everything as BA
     r, m = out["races"], BA.MODE
-    trades = pd.concat(ba_trades, ignore_index=True) if ba_trades else pd.DataFrame()
+    trades = RB.core(pd.concat(ba_trades, ignore_index=True)) if ba_trades else pd.DataFrame()
     totals = dict(out["totals"])
     if f"{m}_pnl" in r:
         pnl, fees = float(r[f"{m}_pnl"].fillna(0).sum()), float(r[f"{m}_fees"].sum())

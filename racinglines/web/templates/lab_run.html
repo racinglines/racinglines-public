@@ -7,6 +7,8 @@
     {% elif k.type == 'datetime' %}<input name="{{ k.name }}" value="{{ sel_cutoff }}" placeholder="YYYY-MM-DDTHH:MM">
     {% elif k.type == 'text' %}<input name="{{ k.name }}" value="{{ val }}" maxlength="60">
     {% elif k.type == 'calib' %}<input name="{{ k.name }}" value="{{ val or '' }}" placeholder="not set, e.g. walk_forward or 2.0" maxlength="20" autocomplete="off">
+    {% elif k.type == 'stage' %}<input name="{{ k.name }}" value="{{ val or '' }}" placeholder="before the weekend, e.g. after Quali" maxlength="60" autocomplete="off">
+    {% elif k.type == 'model_settings' %}<input name="{{ k.name }}" value="{% if val is mapping %}{% for n, x in val.items() %}{{ n }}={{ x|join(',') if x is iterable and x is not string else x }}{{ '; ' if not loop.last }}{% endfor %}{% else %}{{ val or '' }}{% endif %}" placeholder="defaults, e.g. covariates=grid,qual_gap; temperature=fit" maxlength="400" autocomplete="off">
     {% elif k.type == 'years' %}<input name="{{ k.name }}" value="{{ val }}" placeholder="every season" maxlength="60">
     {% elif k.type == 'legs' %}<textarea name="{{ k.name }}" rows="3" maxlength="4000" placeholder='[{"kind": "race_win", "driver": "Max Verstappen"}, {"kind": "race_fastest_lap", "driver": "Max Verstappen"}]'>{{ val or '' }}</textarea>
     {% else %}<input name="{{ k.name }}" type="number" value="{{ val }}" {% set r = ui_range(k.name, val, k.min, k.max) %}min="{{ r[0] }}" max="{{ r[1] }}" step="{{ '1' if k.type == 'int' else 'any' }}">{% endif %}</label>{% endmacro %}

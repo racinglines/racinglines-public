@@ -10,19 +10,29 @@
   <form method="dialog"><button class="primary" autofocus>OK</button></form>
 </dialog>
 {% endif %}
-{# The add-email popup (owner, 2026-10-11): a registered account with no email on file (made before email was required
-   at sign-up), once per browser session, on every app page but Settings. Demo accounts never see it. #}
-{% if not (maintenance_notice() or signup_cta) and request and npath not in ('/settings', '/settings/email') and needs_email(user) %}
-<dialog id="site-notice" class="site-notice email-notice" data-key="email" aria-labelledby="email-notice-title" aria-describedby="email-notice-why">
-  <form method="post" action="/settings/email">{% from "_macros.html" import csrf %}{{ csrf() }}
-    <input type="hidden" name="next" value="{{ npath }}{{ '?' ~ request.url.query if request.url.query }}">
-    <p id="email-notice-title"><b>Add an email so you don't get locked out.</b></p>
-    <p id="email-notice-why">If you forget your password, the email on your account is how we confirm a reset request
-    really comes from you. Without one, we may not be able to get you back in. We'll also send the odd fantasy update,
-    and nothing else. We never share it.</p>
-    <p><input name="email" type="email" required maxlength="254" placeholder="your@email.com" autocomplete="email" aria-label="Email"></p>
-    <p><button class="primary">Save</button> <button type="submit" formmethod="dialog" formnovalidate>Skip for now</button></p>
+{# The follow-a-strategy popup (owner, 2026-10-21, replacing the add-email popup): a compact /strategy/pick for a
+   registered account that follows nothing yet (app.follow_prompt), once per browser session, so a new player can be
+   following a style in about 30 seconds. It posts to /strategy/pick at standard sizing; Kelly and the tweak drawer
+   stay on the full page. #}
+{% set fp = follow_prompt(user, npath) if not (maintenance_notice() or signup_cta) and request else None %}
+{% if fp %}
+<dialog id="site-notice" class="site-notice follow-notice" data-key="follow" aria-labelledby="follow-notice-title">
+  <form method="post" action="/strategy/pick">{% from "_macros.html" import csrf %}{{ csrf() }}
+    <input type="hidden" name="sizing" value="standard">
+    <p id="follow-notice-title"><b>Pick a strategy to follow</b></p>
+    <p class="follow-why">It trades your Ⓕ1,000 at the exchange's real prices for the rest of the season. Let it run on
+    its own, or keep trading by hand on the Trade page alongside it: both share the same Ⓕ1,000.</p>
+    <div class="follow-styles">
+    {% for o in fp.opts %}
+      <label class="follow-style"><input type="radio" name="code" value="{{ o.code }}" required{{ ' checked' if loop.first }}>
+        <span><b>{{ o.label }}</b> <span class="{{ 'good' if o.roi[0] >= 0 else 'bad' }}">2026 {{ "{:+.0%}".format(o.roi[0]) }}</span>{% if o.in_sample %} <span class="pill no">in-sample</span>{% endif %}
+        <span class="muted">{{ o.blurb }}</span></span></label>
+    {% endfor %}
+    </div>
+    {% with venues = fp.venues %}{% include "_follow_venues.html" %}{% endwith %}
+    <p><button class="primary">Follow</button> <button type="submit" formmethod="dialog" formnovalidate>Not now</button></p>
   </form>
-  <p class="muted">Skipping is fine: you can add or change it any time under <a href="/settings">Settings</a>.</p>
+  <p class="muted">Returns are backtests on Ⓕ1,000. Switch, tweak or stop any time between race weekends under
+  <a href="/strategy/pick">Lab → Follow a strategy</a>.</p>
 </dialog>
 {% endif %}

@@ -1,0 +1,12 @@
+{# The exchange checkboxes for a followed strategy (fantasy/follow.VENUES; owner, 2026-10-21), used by the follow popup
+   and the alpha picker. Polymarket is the one that runs, so it is always ticked; the others are opt-ins kept for when
+   they open. Expects `venues` = [dict(key, label, live, note, on)]. #}
+<fieldset class="follow-venues">
+  <legend>Run it on</legend>
+  <input type="hidden" name="venues_form" value="1">
+  {% for v in venues %}
+  <label><input type="checkbox" name="venues" value="{{ v.key }}"{{ ' checked' if v.on or v.live }}{{ ' disabled' if v.live }}>
+    {{ v.label }}{% if v.live %} <span class="pill good">live</span>{% else %} <span class="pill no">{{ v.note }}</span>{% endif %}</label>
+  {% endfor %}
+  <span class="legend">Tick Kalshi or ProphetX now and your strategy starts there as soon as it opens.</span>
+</fieldset>

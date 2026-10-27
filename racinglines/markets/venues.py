@@ -32,6 +32,7 @@ import pandas as pd
 from racinglines import exchanges, sports
 from racinglines.db import reads as data
 from racinglines.markets import private_book as house
+from racinglines.markets.live_model import live_model_key
 
 
 @dataclass(frozen=True)
@@ -277,14 +278,17 @@ def pricing_run(conn, info):
     a past race, the latest as-of price made before it started (diagnostic, else a
     forecast created before the start). Returns dict with run_id, source, as_of, cadence."""
     competition = info.get("competition", "")
+    mk = live_model_key(competition)                     # the live default's runs only (markets/live_model.py)
     if info["status"] != "completed":
-        # Prefer diagnostic runs with sweep_stage (live race session data) over forecast runs
+        # Prefer the live stage runs (live race session data) over forecast runs
         stage_run = data.q(conn, """SELECT id FROM model_runs WHERE kind = 'diagnostic' AND params ? 'sweep_stage'
+                                    AND params->>'live' = 'true'
+                                    AND (CAST(:mk AS text) IS NULL OR params->>'model_key' = CAST(:mk AS text))
                                     AND competition_id = :comp
                                     AND (CAST(:cat AS int) IS NULL OR category_id = CAST(:cat AS int))
                                     AND EXISTS (SELECT 1 FROM race_predictions WHERE model_run_id = model_runs.id AND race_id = :r)
                                     ORDER BY created_at DESC LIMIT 1""",
-                          comp=info["competition_id"], cat=info["category_id"], r=info["race_id"])
+                          mk=mk, comp=info["competition_id"], cat=info["category_id"], r=info["race_id"])
         if len(stage_run):
             rid = int(stage_run["id"].iloc[0])
             return dict(run_id=rid, source="live stage", as_of=None, cadence="updated every 5 min during sessions",
@@ -304,16 +308,26 @@ def pricing_run(conn, info):
         FROM model_runs mr WHERE mr.kind IN ('diagnostic', 'forecast')
           AND EXISTS (SELECT 1 FROM race_predictions rp WHERE rp.model_run_id = mr.id AND rp.race_id = :r)
           AND coalesce((mr.params->>'cutoff')::timestamp, mr.created_at::timestamp) < :s
-        ORDER BY as_of DESC LIMIT 1""", r=info["race_id"], s=pd.Timestamp(start).to_pydatetime())
+        ORDER BY as_of DESC, (mr.params->>'model_key' IS NOT DISTINCT FROM CAST(:mk AS text)) DESC, mr.id DESC
+        LIMIT 1""", r=info["race_id"], s=pd.Timestamp(start).to_pydatetime(), mk=mk)
     if len(df):
         r = df.iloc[0]
         return dict(run_id=int(r["id"]), source="as-of " + r["kind"], as_of=r["as_of"], cadence="pre-race pricing")
     return dict(run_id=None, source="no pre-race price", as_of=None, cadence="no pricing available")
 
 
-def _exchange_rows(conn, links, cache, run_id) -> dict[tuple, dict[str, ExchangeQuote]]:
-    """market_links rows -> {outcome key: {exchange code: ExchangeQuote}} (one row per question for binary pairs)."""
+def shown(venues, hide=()):
+    """The venues (or venue codes) a user may see: `hide` is the exchange codes their audience turns away
+    (web/audience.hidden_venues, mcp/tools.hidden_venues; [exchange] audience = "admin"). Empty for admins and internal callers."""
+    return [v for v in venues if getattr(v, "code", v) not in hide]
+
+
+def _exchange_rows(conn, links, cache, run_id, hide=()) -> dict[tuple, dict[str, ExchangeQuote]]:
+    """market_links rows -> {outcome key: {exchange code: ExchangeQuote}} (one row per question for binary pairs).
+    Links of the exchanges in `hide` are left out."""
     out = {}
+    if len(links) and hide:
+        links = links[~links["exchange"].isin(hide)]
     if not len(links):
         return out
     links = links.sort_values("id")
@@ -394,8 +408,8 @@ def _private_rows(conn, race_id, maker_id):
     return out
 
 
-def event_matrix(conn, race_id, maker_id=house.ALL):
-    """(info, pricing, outcomes DataFrame) for one race."""
+def event_matrix(conn, race_id, maker_id=house.ALL, hide_venues=()):
+    """(info, pricing, outcomes DataFrame) for one race. `hide_venues`: exchange codes whose quotes are left out."""
     info = race_info(conn, race_id)
     if info is None:
         return None, None, pd.DataFrame()
@@ -411,7 +425,7 @@ def event_matrix(conn, race_id, maker_id=house.ALL):
                 if p is not None and not pd.isna(p):
                     base[key(kind, a, None)] = dict(fair=float(p))
     links = data.q(conn, "SELECT * FROM market_links WHERE race_id = :r AND prediction <> 'unmodeled'", r=race_id)
-    exch = _exchange_rows(conn, links, {}, run_id)
+    exch = _exchange_rows(conn, links, {}, run_id, hide_venues)
     priv = _private_rows(conn, race_id, maker_id)
     results = None
     if info["status"] == "completed":
@@ -439,8 +453,8 @@ def placeholders(conn, race_id):
     return {k: int(n) for k, n in zip(df["kind"], df["n"])}
 
 
-def season_matrix(conn, competition, maker_id=house.ALL):
-    """(info, pricing, outcomes) for a competition's season-long markets."""
+def season_matrix(conn, competition, maker_id=house.ALL, hide_venues=()):
+    """(info, pricing, outcomes) for a competition's season-long markets. `hide_venues`: as event_matrix."""
     comp = data.q(conn, "SELECT id, name FROM competitions WHERE code = :c", c=competition)
     if not len(comp):
         return None, None, pd.DataFrame()
@@ -458,7 +472,7 @@ def season_matrix(conn, competition, maker_id=house.ALL):
             base[key("constructors_champion", None, {"team": c.get("team_key")})] = dict(fair=c.get("champion_prob"))
     links = data.q(conn, """SELECT * FROM market_links WHERE competition_id = :c AND race_id IS NULL
                             AND prediction <> 'unmodeled' AND NOT closed""", c=comp_id)
-    exch = _exchange_rows(conn, links, {}, None)
+    exch = _exchange_rows(conn, links, {}, None, hide_venues)
     season_links = set(links["id"].astype(int)) if len(links) else set()
     bk = house.book(conn, 0, maker_id=maker_id)
     bk = bk[bk["market_link_id"].isin(season_links)] if len(bk) else bk
@@ -477,10 +491,10 @@ def season_matrix(conn, competition, maker_id=house.ALL):
         _assemble(conn, base, exch, priv, _subject_names(conn, ids))
 
 
-def venue_summary(outcomes):
-    """Per venue: status, number of outcomes listed, volume."""
+def venue_summary(outcomes, hide_venues=()):
+    """Per venue: status, number of outcomes listed, volume (not the venues in `hide_venues`)."""
     out = []
-    for v in VENUES:
+    for v in shown(VENUES, hide_venues):
         if v.kind == "private":
             n = int(outcomes["private"].notna().sum()) if len(outcomes) else 0
             out.append(dict(venue=v, listed=n, volume=None,
@@ -546,19 +560,20 @@ _EXCHANGE_BREAKDOWN_TIME = 0.0
 _EXCHANGE_BREAKDOWN_TTL = 60
 
 
-def exchange_breakdown(conn, comps=None) -> list[ExchangeBlock]:
+def exchange_breakdown(conn, comps=None, hide_venues=()) -> list[ExchangeBlock]:
     """One ExchangeBlock per sport x exchange: market links and what's been recorded on them. `comps`: {competition
     code: schema} to include (default every sport). Used by /markets/tapes (tape-only sports only) and the
     Markets board (every sport, alongside its own venue chips). The every-sport call (`comps` None) is cached
-    in memory for _EXCHANGE_BREAKDOWN_TTL seconds, per process, so repeated /markets loads skip the queries."""
+    in memory for _EXCHANGE_BREAKDOWN_TTL seconds, per process, so repeated /markets loads skip the queries. The blocks
+    of the exchanges in `hide_venues` are dropped after the cache, so it is one cache for every viewer."""
     global _EXCHANGE_BREAKDOWN_CACHE, _EXCHANGE_BREAKDOWN_TIME
     if comps is not None:
-        return _exchange_breakdown(conn, comps)
+        return [b for b in _exchange_breakdown(conn, comps) if b["exchange"] not in hide_venues]
     now = time.monotonic()
     if _EXCHANGE_BREAKDOWN_CACHE is None or now - _EXCHANGE_BREAKDOWN_TIME >= _EXCHANGE_BREAKDOWN_TTL:
         _EXCHANGE_BREAKDOWN_CACHE = _exchange_breakdown(conn, None)
         _EXCHANGE_BREAKDOWN_TIME = now
-    return list(_EXCHANGE_BREAKDOWN_CACHE)
+    return [b for b in _EXCHANGE_BREAKDOWN_CACHE if b["exchange"] not in hide_venues]
 
 
 def _exchange_breakdown(conn, comps=None) -> list[ExchangeBlock]:
@@ -622,7 +637,7 @@ def _calendar_key(row):
     return (False, d.date() if hasattr(d, "date") else d)
 
 
-def calendar_rows(conn) -> list[CalendarRow]:
+def calendar_rows(conn, hide_venues=()) -> list[CalendarRow]:
     """One CalendarRow per real event (modeled sports, from the races calendar) or per exchange-native event
     (tape-only sports, which have no race in our tables: each exchange's own event, from its market_links),
     across every sport, for the Markets page's calendar: date, sport, title, status and which exchanges have
@@ -644,8 +659,8 @@ def calendar_rows(conn) -> list[CalendarRow]:
             rows.append(dict(sport=r["competition"], sport_name=SPORT_NAME.get(r["competition"], r["competition"]),
                              date=r["start_date"], status=r["status"],
                              title=SP.event_title(r["competition"], r.get("source_key"), r["event_name"]),
-                             exchanges=sorted(by_race.get(int(r["race_id"]), [])), url=f"/races/{int(r['race_id'])}"))
-    for b in exchange_breakdown(conn, {s["competition"]["code"]: s for s in tape_sports()}):
+                             exchanges=sorted(by_race.get(int(r["race_id"]), set()) - set(hide_venues)), url=f"/races/{int(r['race_id'])}"))
+    for b in exchange_breakdown(conn, {s["competition"]["code"]: s for s in tape_sports()}, *([hide_venues] if hide_venues else [])):
         for e in b["events"]:
             rows.append(dict(sport=b["competition"], sport_name=b["sport_name"], date=e["end_date"],
                              title=e["title"], status="open" if e["open"] else "settled", exchanges=[b["exchange"]],

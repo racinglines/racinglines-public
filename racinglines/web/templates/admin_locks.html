@@ -1,0 +1,26 @@
+{% extends "base.html" %}{% from "_macros.html" import page_head, flash, csrf, empty %}
+{% block title %}Pick locks{% endblock %}
+{% block content %}
+{# web/admin.admin_locks: each coming F1 weekend's strategy-pick lock and the admin's override (fantasy/follow.lock_overrides). #}
+{{ page_head("Pick locks", "When players can't pick or change a strategy. By default each F1 weekend locks at lights out and reopens a day after the race; a pick made mid-weekend only trades the stages priced after it.") }}
+{% include "_admin_nav.html" %}
+{{ flash(msg) }}
+{% if not weekends %}{{ empty("No F1 weekend left this season.") }}{% else %}
+<p class="muted">Times are UTC. Leave a time empty for the default. A lock can't reopen later than the default: once a race is a day old the next weekend takes over.</p>
+<div class="card"><table class="locks"><thead><tr><th class="l">Weekend</th><th class="l">First session</th><th class="l">Lights out</th><th class="l">Locks</th><th class="l">Reopens</th><th class="l">Now</th><th class="l">Override</th></tr></thead><tbody>
+{% for w in weekends %}<tr>
+<td class="l"><b>{{ w.name }}</b> <span class="muted">{{ w.event_key }}</span></td>
+<td class="l">{{ w.first.strftime("%a %d %b %H:%M") }}</td>
+<td class="l">{{ w.race_start.strftime("%a %d %b %H:%M") }}</td>
+<td class="l">{% if w.off %}<span class="muted">no lock</span>{% else %}{{ w.closes.strftime("%a %d %b %H:%M") }}{% endif %}</td>
+<td class="l">{% if not w.off %}{{ w.reopens.strftime("%a %d %b %H:%M") }}{% endif %}</td>
+<td class="l">{% if w.locked %}<span class="pill bad">locked</span>{% else %}<span class="pill good">open</span>{% endif %}{% if w.override %} <span class="pill no">override</span>{% endif %}</td>
+<td class="l"><form method="post" action="/admin/locks" class="inline">{{ csrf() }}<input type="hidden" name="event_key" value="{{ w.event_key }}">
+  <label>Locks <input type="datetime-local" name="closes" value="{{ w.closes.strftime('%Y-%m-%dT%H:%M') if w.override and not w.off and w.closes != w.race_start }}" aria-label="Locks at (UTC)"></label>
+  <label>Reopens <input type="datetime-local" name="reopens" value="{{ w.reopens.strftime('%Y-%m-%dT%H:%M') if w.override and not w.off and w.reopens != w.default_reopens }}" aria-label="Reopens at (UTC)"></label>
+  <label><input type="checkbox" name="off" value="1"{{ ' checked' if w.off }}> No lock</label>
+  <button class="primary">Save</button>{% if w.override %} <button name="reset" value="1">Reset to default</button>{% endif %}</form></td>
+</tr>{% endfor %}
+</tbody></table></div>
+{% endif %}
+{% endblock %}

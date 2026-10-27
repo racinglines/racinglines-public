@@ -80,6 +80,25 @@ def hidden_sports(viewer):
     return frozenset(c for c in SC.SPORT_CODES if not SC.is_public(c, viewer))
 
 
+# The exchange codes this request may not see ([exchange] audience = "admin"), set per tool call like HIDDEN.
+HIDDEN_VENUES = contextvars.ContextVar("racinglines_mcp_hidden_venues", default=frozenset())
+
+
+def _hv():
+    h = HIDDEN_VENUES.get()
+    return dict(hide_venues=h) if h else {}
+
+
+def hidden_venues(viewer):
+    """The exchanges `viewer` may not see: the ones the one gate, exchanges.is_public, turns away. None for internal
+    callers (stdio) and admins. The raw `sql` tool is admin-only, so it needs no filter."""
+    from racinglines import exchanges as EX
+    from racinglines.web import roles as R
+    if not viewer or R.canonical(viewer.get("role")) == "admin":
+        return frozenset()
+    return frozenset(c for c in EX.CODES if not EX.is_public(c, viewer))
+
+
 def not_available(what):
     return ValueError(f"{what} is not available")
 
@@ -238,7 +257,8 @@ def overview(conn, viewer=None):
     links = data.q(conn, """SELECT ml.exchange, count(*) AS links, count(*) FILTER (WHERE NOT ml.closed) AS open,
                             count(DISTINCT ml.race_id) AS races FROM market_links ml
                             LEFT JOIN competitions co ON co.id = ml.competition_id
-                            WHERE co.code IS NULL OR co.code <> ALL(:c) GROUP BY ml.exchange ORDER BY ml.exchange""", c=no_comps)
+                            WHERE (co.code IS NULL OR co.code <> ALL(:c)) AND ml.exchange <> ALL(:x)
+                            GROUP BY ml.exchange ORDER BY ml.exchange""", c=no_comps, x=sorted(HIDDEN_VENUES.get()))
     scoped = _account_viewer(viewer)
     uid = scoped["id"] if scoped else None
     users = data.q(conn, """SELECT username, role, prefs->'strategy_profile'->>'name' AS profile FROM users
@@ -258,7 +278,7 @@ def overview(conn, viewer=None):
         forecasts=[P.record(r) for r in _drop_hidden(conn, data.latest_forecasts(conn), competition="competitions").to_dict("records")],
         model_runs=[P.record(r) for r in runs.to_dict("records")],
         market_links=[P.record(r) for r in links.to_dict("records")],
-        venues=[dict(code=v.code, name=v.name, status=v.status, kind=v.kind) for v in V.VENUES],
+        venues=[dict(code=v.code, name=v.name, status=v.status, kind=v.kind) for v in V.shown(V.VENUES, HIDDEN_VENUES.get())],
         users=[P.record(r) for r in users.to_dict("records")],
         upcoming=[P.record(r) for r in _drop_hidden(conn, upcoming, competition="competitions").to_dict("records")],
         row_counts=counts,
@@ -392,7 +412,7 @@ def list_markets(conn, race_id=None, event_id=None, competition=None, sport=None
         race_id = int(r["id"].iloc[0])
     if race_id is not None:
         _guard(conn, "race_ids", int(race_id), f"race {race_id}")
-        info, pricing, df = V.event_matrix(conn, int(race_id), maker_id=maker_id)
+        info, pricing, df = V.event_matrix(conn, int(race_id), maker_id=maker_id, **_hv())
         if info is None:
             raise ValueError(f"no race {race_id}")
         head = dict(race_id=int(race_id), event_id=info["event_id"], title=info["title"], competition=info["competition"],
@@ -401,7 +421,7 @@ def list_markets(conn, race_id=None, event_id=None, competition=None, sport=None
         comp = _sport_filter(conn, sport, competition)
         if not comp:
             raise ValueError("give race_id, event_id, or competition/sport (season markets)")
-        info, pricing, df = V.season_matrix(conn, comp, maker_id=maker_id)
+        info, pricing, df = V.season_matrix(conn, comp, maker_id=maker_id, **_hv())
         if info is None:
             raise ValueError(f"no competition {comp!r}")
         head = dict(competition=comp, title=info["title"], scope="season")
@@ -414,7 +434,7 @@ def list_markets(conn, race_id=None, event_id=None, competition=None, sport=None
         by_kind[r["kind"]] = by_kind.get(r["kind"], 0) + 1
     scope = dict(event_id=head["event_id"]) if race_id is not None else dict(competition=head["competition"])
     upcoming = race_id is None or head.get("status") != "completed"
-    venues = [dict(venue=v["venue"].code, listed=v["listed"], volume=v["volume"]) for v in V.venue_summary(df)] if len(df) else []
+    venues = [dict(venue=v["venue"].code, listed=v["listed"], volume=v["volume"]) for v in V.venue_summary(df, HIDDEN_VENUES.get())] if len(df) else []
     pr = pricing or {}
     return dict(**P.record(head), pricing=P.record(pr), outcomes_by_kind=by_kind,
                 freshness=freshness(conn, upcoming=upcoming, **scope),
@@ -445,10 +465,10 @@ def freshness(conn, event_id=None, competition=None, upcoming=True, now=None):
         df = data.q(conn, """SELECT ml.exchange, count(*) AS links, max(ml.synced_at) AS synced_at FROM market_links ml
                              JOIN competitions co ON co.id = ml.competition_id
                              WHERE co.code = :c AND ml.race_id IS NULL GROUP BY 1""", c=competition)
-    got = {r["exchange"]: r for r in df.to_dict("records")}
+    got = {r["exchange"]: r for r in df.to_dict("records") if r["exchange"] not in HIDDEN_VENUES.get()}
     limit = stale_hours()
     now = now or pd.Timestamp.now(tz="UTC")
-    codes = [v.code for v in V.EXCHANGES if v.status == "live"]
+    codes = [v.code for v in V.shown(V.EXCHANGES, HIDDEN_VENUES.get()) if v.status == "live"]
     codes += [c for c in sorted(got) if c not in codes]
     out = []
     for code in codes:
@@ -480,6 +500,7 @@ def _tokens_for(conn, race_id=None, kind=None, athlete_id=None, subject=None, ex
         params["s"] = subject
     if exchange:
         where.append("ml.exchange = :x"); params["x"] = exchange
+    where.append("ml.exchange <> ALL(:hx)"); params["hx"] = sorted(HIDDEN_VENUES.get())     # an admin-only exchange
     df = data.q(conn, f"""
         SELECT ml.token_id, ml.exchange, ml.prediction AS kind, coalesce(a.display_name, ml.params->>'team', ml.outcome) AS subject,
                ml.outcome, ml.question, ml.invert, ml.closed, ml.resolved_yes, ml.race_id, co.code AS competition
@@ -505,6 +526,10 @@ def get_market_history(conn, tokens=None, race_id=None, kind=None, athlete_id=No
         links = links[links["token_id"].isin(toks)] if len(links) else links
         names = {r["token_id"]: r for r in links.to_dict("records")}
         toks = list(dict.fromkeys(toks))
+        if HIDDEN_VENUES.get():              # an admin-only exchange's token reads as no market too
+            gone = {r[0] for r in conn.execute(text("SELECT token_id FROM market_links WHERE exchange = ANY(:x) AND token_id = ANY(:t)"),
+                                               dict(x=sorted(HIDDEN_VENUES.get()), t=toks)).fetchall()}
+            toks = [t for t in toks if t not in gone]
         h = _hidden(conn)
         if h:                                # a hidden sport's token reads as no market (_tokens_for left it out)
             gone = {r[0] for r in conn.execute(text(
@@ -589,6 +614,31 @@ def list_model_runs(conn, kind=None, competition=None, sport=None, season=None, 
         ORDER BY mr.id DESC""", k=kind, c=comp, y=season)
     df = _drop_hidden(conn, df, competition="competitions")
     return P.page(df, limit=limit, offset=offset, note=f"kinds: {', '.join(RUN_KINDS)}")
+
+
+def compare_runs(conn, run_a, run_b, kinds=None, stage=None, diagnostics=False):
+    """Two saved runs paired by event on their prediction records (pipelines/eval_compare.py, `racinglines eval compare`):
+    per kind x season and pooled, log loss and Brier of each, B - A with its standard error over events and whether 0 is
+    outside ±2 SE. diagnostics=True adds the pass test's tables (buckets, favourites, pole: reliability buckets, favourite wins
+    and the pole-sitter win rate, as in `eval compare --diagnostics`). Read-only: nothing is written. Both runs need records
+    (RACINGLINES_PREDICTION_RECORDS=1 with --save)."""
+    from racinglines.pipelines import eval_compare as EC
+    for rid in (run_a, run_b):
+        run = data.model_run(conn, int(rid))
+        if not run:
+            raise ValueError(f"no model run {rid}")
+        _guard(conn, "competitions", run["competition"], f"model run {rid}")
+    kinds = [k.strip() for k in kinds.split(",") if k.strip()] if isinstance(kinds, str) else kinds
+    res = EC.run(int(run_a), int(run_b), kinds=kinds or None, stage=stage, echo=lambda s: None, write=False,
+                 diagnostics=bool(diagnostics), engine_url=conn.engine.url.render_as_string(hide_password=False))
+    c = res["counts"]
+    out = dict(run_a=int(run_a), run_b=int(run_b), kinds=kinds, stage=stage, diff="B - A (lower is better)",
+               paired=c["paired"], only_a=c["only_a"], only_b=c["only_b"], unsettled=res["unsettled"],
+               summary=P.page(res["summary"], limit=P.MAX_LIMIT))
+    for name in ("buckets", "favourites", "pole"):
+        if name in res:
+            out[name] = P.page(res[name], limit=P.MAX_LIMIT)
+    return out
 
 
 def _dig(obj, path):
@@ -1314,7 +1364,7 @@ def fantasy_orders(conn, user=None, limit=None, offset=0, viewer=None):
 
 
 def fantasy_leaderboard(conn, limit=None, offset=0, books=None):
-    """The leaderboard: score = ROI x sqrt(trades) (ROI = P&L over F$ staked), at least ledger.MIN_TRADES trades to
+    """The leaderboard: score = ROI x (trades / 10)^0.3 (ROI = P&L over F$ staked), at least ledger.MIN_TRADES trades to
     rank. P&L and ROI only, never a player's balance (owner, 2026-10-12)."""
     from racinglines.fantasy import exchange as FX
     from racinglines.fantasy import ledger as FL
@@ -1424,7 +1474,7 @@ def fantasy_order(engine, market_link_id, side, action, shares, limit_price, cli
         cash = FL.available(c, who["id"])
     return dict(user=who["username"], ok=r["ok"], order_id=r["order_id"], status=r["status"], reason=r["reason"],
                 message=r["message"] or None, fills=r["fills"], fee=P.plain(r["fee"]), position=r.get("position"),
-                cash=round(cash, 2))
+                book_source=r.get("book_source"), cash=round(cash, 2))
 
 
 # --- following a strategy (fantasy/follow.py, the path /strategy/pick saves through) ---------------------------------

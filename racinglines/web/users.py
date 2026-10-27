@@ -16,7 +16,7 @@ import json
 import os
 import secrets
 
-from sqlalchemy import insert, select
+from sqlalchemy import func, insert, select
 
 from racinglines.db import models as m
 from racinglines.web.roles import ROLES, canonical  # noqa: F401  (ROLES: the values create_user accepts)
@@ -43,8 +43,29 @@ def get_user(session, user_id=None, username=None):
     return session.scalars(q).first()
 
 
+def find_login(session, name):
+    """The active account a sign-in name means: the exact username, else the one account whose username, email
+    (prefs.email) or display name matches ignoring case and surrounding spaces (owner, 2026-10-26: sign-ups store
+    lower-case usernames, but people type "MaxD" or their display name). A name two accounts share matches neither."""
+    name = (name or "").strip()
+    if not name:
+        return None
+    u = get_user(session, username=name)
+    if u is not None:
+        return u if u.active else None
+    key = name.lower()
+    for col in (func.lower(m.User.username), func.lower(m.User.prefs["email"].astext),
+                func.lower(func.trim(m.User.display_name))):
+        hits = session.scalars(select(m.User).where(col == key, m.User.active.is_(True)).limit(2)).all()
+        if len(hits) == 1:
+            return hits[0]
+        if hits:
+            return None
+    return None
+
+
 def authenticate(session, username, password):
-    u = get_user(session, username=username)
+    u = find_login(session, username)
     return u if u and u.active and verify_password(password, u.password_hash) else None
 
 

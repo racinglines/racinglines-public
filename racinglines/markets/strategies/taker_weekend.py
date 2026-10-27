@@ -37,6 +37,7 @@ import math
 from dataclasses import dataclass, replace
 
 import pandas as pd
+from racinglines.core.stages import PRE_RACE
 from racinglines.markets import settlement_rules as SR
 from racinglines.markets.strategies.sizing import target_shares
 
@@ -65,7 +66,9 @@ class TakerParams:
     root_unit: float | None = None                       # root unit system: stake = root_unit x scale x sqrt(c / (1 - c))
                                                          # for a contract costing c, capped at max_stake x scale
     fill: str = "price"                                  # "price": one price per order; "book": walk the stage's
-                                                         # book levels (stages with `asks` / `bids`, else "price")
+                                                         # book levels (stages with `asks` / `bids`, else "price");
+                                                         # "book_only": walk them, and a stage with no book trades
+                                                         # nothing (the live pass, Mexico spec rule 5)
     sell_floor: str | None = None                        # the lowest a sale may fill (both fills): None = no floor
                                                          # (one price: any bid; book: the touch level only), "fair"
                                                          # = net of fee at or above fair, "edge" = at or above
@@ -145,8 +148,8 @@ class _Market:
                if s["fair"] is not None and s["price"] is not None
                and (s["tradeable"] or (p.thin_edge_mult is not None and s.get("thin")
                                        and abs(s["fair"] - s["price"]) >= p.thin_edge_mult * p.min_edge))]
-        if p.stages is not None:
-            idx = [i for i in idx if stages[i]["label"] in p.stages]
+        if p.stages is not None:                         # the live pre-race stage is open to every player (spec rule 2)
+            idx = [i for i in idx if stages[i]["label"] in p.stages or stages[i]["label"] == PRE_RACE]
         if p.mode == "hold":
             idx = idx[:1]
         elif p.mode == "last":
@@ -194,7 +197,9 @@ class _Market:
                 if abs(d) < 1e-9:
                     continue
                 f_side = s["fair"] if side == "YES" else 1 - s["fair"]
-                levels = _book_side(s, side, d > 0) if p.fill == "book" else None
+                levels = _book_side(s, side, d > 0) if p.fill in ("book", "book_only") else None
+                if levels is None and p.fill == "book_only":
+                    continue                                 # no recorded book at this stage: no fill
                 if levels is not None:                       # a limit: never past the edge or floor (_within)
                     levels = _within(levels, f_side, p.min_edge, p.taker_fee, d > 0, p.sell_floor)
                 elif d < 0 and not _floor_ok(px, f_side, p.min_edge, p.sell_floor, p.cost, p.taker_fee):
@@ -227,7 +232,8 @@ class _Market:
                 else:
                     self.no = tgt
                 self.trades.append(dict(stage=s["label"], t=s["t"], side=side, shares=d, price=exec_px,
-                                        fair=s["fair"], mid=price))
+                                        fair=s["fair"], mid=price, bid=s.get("bid"), ask=s.get("ask"),
+                                        bid_size=s.get("bid_size"), ask_size=s.get("ask_size")))
         if price is not None:
             self.marks.append(dict(stage=s["label"], value=self.cash + self.yes * price + self.no * (1 - price)))
         return self.deployed - before
@@ -276,7 +282,8 @@ def run_weekend(markets, p: TakerParams):
     all_trades, per = [], []
     for mk, r in zip(markets, results):
         for tr in r["trades"]:
-            all_trades.append(dict(tr, key=mk["key"], kind=mk["kind"], subject=mk["subject"]))
+            all_trades.append(dict(tr, key=mk["key"], kind=mk["kind"], subject=mk["subject"],
+                                   outcome=mk["outcome"]))
         cost_basis = sum(tr["shares"] * tr["price"] for tr in r["trades"] if tr["shares"] > 0)
         per.append(dict(key=mk["key"], kind=mk["kind"], subject=mk["subject"], trades=len(r["trades"]),
                         bought=cost_basis, pnl=r["pnl"], outcome=mk["outcome"]))
@@ -292,6 +299,15 @@ def _capped(markets, p: TakerParams):
     for _, j, i in order:
         deployed += books[j].step(i, room=max(p.max_deployed - deployed, 0.0))
     return [b.result(mk["outcome"]) for b, mk in zip(books, markets)]
+
+
+# touch quote, sizes and outcome on each trade row: for --trades-out (weekend_sweep.trades_frame) only
+DUMP_COLS = ("bid", "ask", "bid_size", "ask_size", "outcome")
+
+
+def core(trades):
+    """`trades` without DUMP_COLS, so a sweep's own tables and saved outputs stay as they were."""
+    return trades.drop(columns=[c for c in DUMP_COLS if c in trades])
 
 
 def summarize(trades, per):

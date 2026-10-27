@@ -97,7 +97,8 @@ def schedule(year, rounds=None):
             continue
         out[rnd] = dict(event_key=f"{year}-{rnd:02d}", name=ev.EventName, format=ev.EventFormat, race_start=b["until"],
                         qual_start=next((t for n, t in sessions if n == "Qualifying"), None), closes=b["closes"],
-                        sessions=[(SHORT.get(n, n), t) for n, t in sessions], stages=b["stages"])
+                        sessions=[(SHORT.get(n, n), t) for n, t in sessions], stages=b["stages"],
+                        pre_race=STG.pre_race(b["until"], "f1", b["stages"][-1][1] if b["stages"] else None))
     return out
 
 
@@ -263,6 +264,8 @@ def weekend_markets(conn, w, stage_runs, min_volume_24h=None, price_times=None, 
     venue.tol_by_kind = dict(tol_by_kind or {})
     if thin_depth:
         venue.load_books(conn, start, end)
+    elif levels:                                            # the walk: only the books at the stages' price times
+        venue.load_books(conn, start, end, times=[at(lab, cu) for lab, cu, _ in stage_runs])
     res = house.race_outcomes(conn, rid)
     cache, markets = {}, []
     fair = {}   # (token, stage) -> fair
@@ -285,6 +288,9 @@ def weekend_markets(conn, w, stage_runs, min_volume_24h=None, price_times=None, 
             q, wide = stage_quote(venue, link["token_id"], t, max_spread)
             if q is not None:                    # the taker buys at the ask and sells at the bid (Kalshi)
                 stage.update(bid=q[0], ask=q[1])
+                sz = venue.touch_sizes(link["token_id"], t) if hasattr(venue, "touch_sizes") else None
+                if sz is not None:
+                    stage.update(bid_size=sz[0], ask_size=sz[1])
             if wide:                             # max_spread: no market to fill at
                 stage.update(tradeable=False, wide=True)
             if levels:
@@ -451,16 +457,23 @@ HISTORY_CACHE = "RACINGLINES_HISTORY_CACHE"      # =1: keep rating histories on 
 def history(meas, st, echo=print):
     """The model's rating history (pricing.history) under settings `st`, which must be applied. With
     RACINGLINES_HISTORY_CACHE=1 it is kept in data/cache/history/, keyed by the settings' model_key and the
-    fingerprint of all the data (sweep_settings.data_key), so a stored history is reused only for exactly
-    the same model and data; the search turns it on for its jobs. Off, it is built every time, as before."""
+    fingerprint of all the data (sweep_settings.data_key) and clean checkout's code version. Unknown, dirty or
+    untracked versions bypass the disk cache. Off, it is built every time, as before."""
+    import hashlib
     import os
 
     from racinglines import paths
+    from racinglines.db.queries import code_version
     from racinglines.models.inputs import laps_pricing as run
     from racinglines.pipelines import sweep_settings as SS
     if os.environ.get(HISTORY_CACHE, "0") != "1":
         return run.history(meas, st["track_features"])
-    f = paths.cache("history") / f"{st.model_key}-{SS.data_key(meas.view(pd.Timestamp('2100-01-01')))}.pkl"
+    version = code_version()
+    if not version or version.endswith(("-dirty", "-untracked")):
+        echo("progress history cache bypassed: checkout code version is unknown or not clean")
+        return run.history(meas, st["track_features"])
+    code_key = hashlib.sha256(version.encode()).hexdigest()[:16]
+    f = paths.cache("history") / f"{st.model_key}-{SS.data_key(meas.view(pd.Timestamp('2100-01-01')))}-{code_key}.pkl"
     if f.exists():
         echo(f"progress history from cache ({f.name})")
         return pd.read_pickle(f)
@@ -637,7 +650,7 @@ def season(events, trade_event, st, params_list, stage_order=(), total=None, ech
              f"update {row.get('update_pnl', 0):+.2f} · hold {row.get('hold_pnl', 0):+.2f} · "
              f"last {row.get('last_pnl', 0):+.2f} · maker {row.get('maker_pnl', float('nan')):+.2f}")
     weekends = pd.DataFrame(rows)
-    trades = pd.concat(all_trades, ignore_index=True) if all_trades else pd.DataFrame()
+    trades = RB.core(pd.concat(all_trades, ignore_index=True)) if all_trades else pd.DataFrame()
     by_stage = RB.by(trades, "stage")
     if len(by_stage):
         by_stage["o"] = by_stage["stage"].map({s: i for i, s in enumerate(stage_order)}).fillna(99)
@@ -661,6 +674,37 @@ def season(events, trade_event, st, params_list, stage_order=(), total=None, ech
     return dict(weekends=weekends, by_stage=by_stage, by_kind=RB.by(trades, "kind"), totals=totals, trades=trades,
                 scores=score_stage, calibration=pd.concat([cal_all.assign(stage="all"), cal_stage], ignore_index=True),
                 reliability=rel, strategy_trades={k: pd.concat(v, ignore_index=True) for k, v in by_strategy.items()})
+
+
+def trades_frame(out):
+    """Every trade of a sweep's `strategy_trades` (each taker mode, maker variant) as one frame: the trade rows (with
+    the touch bid / ask and sizes where the tape had them, and the market's outcome) plus mode, settings_key, venue,
+    year (from the stage time), event_key and event. Empty frame when there are none."""
+    p, ev = out.get("params") or {}, {r["event_key"]: r["event"] for r in out["weekends"].to_dict("records")} \
+        if len(out.get("weekends", ())) else {}
+    parts = [t.assign(mode=name) for name, t in (out.get("strategy_trades") or {}).items() if len(t)]
+    if not parts:
+        return pd.DataFrame()
+    df = pd.concat(parts, ignore_index=True)
+    df["settings_key"], df["venue"] = p.get("settings_key"), p.get("venue")
+    df["year"] = pd.to_datetime(df["t"], errors="coerce").dt.year if "t" in df else None
+    df["event"] = df["event_key"].map(ev)
+    lead = ["mode", "settings_key", "venue", "year", "event_key", "event"]
+    return df[lead + [c for c in df.columns if c not in lead]]
+
+
+def write_trades(out, folder, name="trades"):
+    """--trades-out: write trades_frame(out) to <folder>/<name>.parquet (opt-in output; nothing else changes).
+    Returns the path, or None when the sweep made no trades."""
+    from pathlib import Path
+    df = trades_frame(out)
+    if not len(df):
+        return None
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    dest = folder / f"{name}.parquet"
+    df.to_parquet(dest, index=False)
+    return dest
 
 
 def season_clv(engine, out, venue, sport, stage_order=(), echo=print):

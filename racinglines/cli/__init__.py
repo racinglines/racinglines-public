@@ -5,6 +5,7 @@ racinglines <group> <command> [SPORT] [options]
     model     forecast | backtest | compare | diagnostic | props | ...   SPORT   (pricing)
     strategy  replay | sweep | season-replay | signals | scorecard | ...  SPORT   (trading against exchange tapes)
     backtest  walk-forward SPORT | coverage | clv   (the backtest core, any sport with a pricing model)
+    eval      compare RUN_A RUN_B   (two saved runs paired by event on their prediction records, ±2 SE)
     weather   probe | fetch | show   (weather forecasts per event: Weather Underground, docs/weather.md)
     markets   sync | history | trades | record | archive
     book      map | price | settle | view | render | new   (generic sportsbook lines and slips: model and market EV, docs/sportsbook/slips.md)
@@ -27,11 +28,11 @@ SPORT is f1, mtb_dh, nascar, motogp or cycling, e.g. `racinglines model forecast
 import re
 import sys
 
-GROUPS = ("data", "model", "strategy", "weather", "backtest", "markets", "book", "db", "live", "web", "users", "mcp", "remote",
+GROUPS = ("data", "model", "strategy", "weather", "backtest", "eval", "markets", "book", "db", "live", "web", "users", "mcp", "remote",
           "tui", "check")
 # the sport-first form (`racinglines f1 forecast`): deprecated, an alias for one version with a notice on stderr, not listed
 VERB_GROUPS = ("data", "model", "strategy")
-SPORT_FIRST = ("f1", "mtb_dh", "nascar", "motogp", "cycling")
+SPORT_FIRST = ("f1", "mtb_dh", "nascar", "motogp", "cycling", "fis_alpine")
 
 
 def present(module):

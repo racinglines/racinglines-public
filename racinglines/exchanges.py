@@ -10,6 +10,9 @@ Kalshi predate this and keep their own packages; they can move onto schemas late
     CODES             every exchange with a schema
     enabled("og")     whether its switch (an env var, off by default) is on
     sports("og")      the sports it lists (sports/<code>.toml codes)
+    audience("og")    who the app shows it to ([exchange] audience): "all" (the default) or "admin"
+    admin_only()      the exchange codes whose audience is "admin"
+    is_public(code, user)   the one gate (web pages and MCP tools): may this user see the exchange's quotes?
     dig(obj, path)    obj["a"]["b"][0] for "a.b.0", None when any step is missing
 
 An endpoint can state the exchange's own caps as `limits = { max_count = 150, max_batch = 10, max_window_days = 31 }`.
@@ -58,6 +61,33 @@ def load(code):
 def enabled(code):
     """The exchange's switch env var (schema [exchange] switch) is 1 / true / yes. Off unless set."""
     return os.environ.get(load(code)["exchange"].get("switch", ""), "").lower() in ("1", "true", "yes")
+
+
+AUDIENCES = ("all", "admin")
+
+
+def audience(code):
+    """Who the app shows the exchange to ([exchange] audience), as [sport] audience does for a sport (sports.audience):
+    "all" (the default) or "admin" (owner, 2026-10-21, ProphetX for testing). Only what users see changes: the exchange is
+    still recorded, and the CLI and admins see all of it."""
+    got = load(code)["exchange"].get("audience", "all")
+    if got not in AUDIENCES:
+        raise ValueError(f"exchanges/{code}.toml [exchange] audience: {got!r} not in {AUDIENCES}")
+    return got
+
+
+def admin_only():
+    """The exchange codes the app shows to admins only ([exchange] audience = "admin")."""
+    return frozenset(c for c in CODES if audience(c) == "admin")
+
+
+def is_public(code, user=None):
+    """The exchange gate every user-facing reader calls (sports.is_public's twin): True for an admin, for None (an
+    internal caller: the CLI, the recorder, the stdio MCP server) and for a code without a schema (Polymarket, Kalshi);
+    else whether the exchange's audience is "all". A signed-out web visitor is {} (web/audience.py), not None."""
+    if user is None or code not in CODES or (isinstance(user, dict) and user.get("role") == "admin"):
+        return True
+    return audience(code) == "all"
 
 
 def sports(code):

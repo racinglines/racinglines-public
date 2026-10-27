@@ -21,7 +21,7 @@
     <h3><span class="mt-badge mt-{{ o.kind }}" title="{{ 'Maker: rests its own quotes and waits to be filled' if o.kind == 'maker' else 'Taker: buys at the price the market shows' }}" aria-label="{{ o.kind }}">{{ 'M' if o.kind == 'maker' else 'T' }}</span> {{ o.label }}{% if o.code == now %} <span class="pill good">following</span>{% endif %}</h3>
     <p>{{ o.blurb }}</p>
     <p class="style-bt"><span><span class="{{ 'good' if o.roi[0] >= 0 else 'bad' }}">2026 {{ "{:+.0%}".format(o.roi[0]) }}</span> · <span class="{{ 'good' if o.roi[1] >= 0 else 'bad' }}">2025 {{ "{:+.0%}".format(o.roi[1]) }}</span></span>
-      <span class="legend">backtest, season return on F$1,000 at our standard sizing</span></p>
+      <span class="legend">backtest, season return on Ⓕ1,000 at our standard sizing</span></p>
     {% if o.in_sample %}<p><span class="pill no">in-sample: tuned on the same seasons it's scored on</span></p>{% endif %}
     <button type="submit" name="code" value="{{ o.code }}" class="{{ 'primary' if o.code == chosen }}">Follow {{ o.label }}</button>
   </div>
@@ -29,7 +29,7 @@
   </div>
   <div class="pick-sizing">
     <span class="l">Sizing</span>
-    <label><input type="radio" name="sizing" value="standard"{{ ' checked' if sizing != "kelly" }}> Standard: the backtests' stakes, scaled to your F$ balance (one F$1,000 for this and your own trades)</label>
+    <label><input type="radio" name="sizing" value="standard"{{ ' checked' if sizing != "kelly" }}> Standard: the backtests' stakes, scaled to your Ⓕ balance (one Ⓕ1,000 for this and your own trades)</label>
     <label><input type="radio" name="sizing" value="kelly"{{ ' checked' if sizing == "kelly" }}> Kelly <span class="pill no">untested for this strategy</span></label>
     <div class="pick-kelly" data-kelly-box data-labels='{{ kelly_labels|tojson }}'>
       <span class="pick-slider"><span>Kelly fraction: <b data-kelly-out>{{ (kelly * 100)|round|int }}%</b> <b data-kelly-label>{{ kelly_label }}</b></span>
@@ -38,6 +38,7 @@
       <span class="legend">Kelly sizes each bet by how big the edge is and how much you have; half and quarter Kelly bet less of it, for smaller swings.</span>
     </div>
   </div>
+  {% include "_follow_venues.html" %}
   {% if drawer %}<details class="pick-tweak" data-tweak>
     <summary>Tweak it</summary>
     <p class="legend">Moves apply to the style you follow next. A tweaked style has no backtest: it is untested, scored live from the next race weekend.</p>

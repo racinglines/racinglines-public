@@ -412,7 +412,16 @@ def price_stages_now(meas, hist, w, st, engine, engine_url, now, echo=print):
             hit = (rid, now)
             echo(f"  {label}: priced (run #{rid})")
         out.append((label, cutoff, *hit))
-    return out
+    return with_pre_race(out, w, now)
+
+
+def with_pre_race(out, w, now):
+    """out (price_stages_now's stages) plus the weekend's live pre-race stage (core/stages.pre_race) once its time
+    has come and every stage before it is priced, on the last stage's run, priced at its own time. -> [stage]"""
+    pre = w.get("pre_race")
+    if pre is None or now < pre[1] or not out or len(out) != len(w["stages"]):
+        return out
+    return [*out, (pre[0], pre[1], out[-1][2], pre[1])]
 
 
 # ---------------------------------------------------------------------------
@@ -485,13 +494,16 @@ def compute(engine, engine_url, profile, now=None, event="next", live=True, fetc
         if strategy in WS.TAKER_MODES:
             price_times = {lab: max(cu, at) for lab, cu, _, at in stages} if live else None
             opt = tuple(k for k in WS.OPT_KINDS if k in st["market_kinds"])
+            fill = "book" if live else None      # live: every order walks the recorded book (Mexico spec rule 5)
             markets = WS.weekend_markets(c, w, runs, min_volume_24h=st["min_volume_24h"], price_times=price_times,
                                          venue=venue, kinds=WS.KINDS + opt if opt else None,
                                          thin_depth=st["thin_edge_mult"] is not None,
                                          tol_by_kind=SS.parse_map(st["coherence_tol_by_kind"]),
-                                         max_spread=st.get("max_spread"))
+                                         max_spread=st.get("max_spread"), taker_fill=fill)
             markets = [m for m in markets or [] if m["kind"] in st["market_kinds"]]
             p = taker_params(st, strategy, venue)
+            if live:                             # each player walks their own copy of the book, to fair - edge - fee
+                p = replace(p, fill="book_only")
             if scale != 1.0:
                 p = replace(p, scale=p.scale * scale)
             base["signals"], base["positions"] = taker_signals(markets, p)
@@ -508,8 +520,8 @@ def compute(engine, engine_url, profile, now=None, event="next", live=True, fetc
 def taker_params(st, strategy, venue):
     """The live taker's TakerParams from a profile's settings, as the sweep reads them for the same settings
     (weekend_sweep): sell_floor and the stage filter max_spread (weekend_markets) apply live too. Not applied
-    live: max_deployed (see taker_signals), kelly / root_unit sizing, and taker_fill (the live pass prices
-    from our own tape)."""
+    live: max_deployed (see taker_signals), kelly / root_unit sizing, and the taker_fill setting: compute() makes
+    every live order walk our recorded book instead (fill = book_only; Mexico spec rule 5)."""
     return RB.TakerParams(min_edge=st["min_edge"], stake_per_edge=st["stake_per_edge"], max_stake=st["max_stake"],
                           cost=WS.taker_cost(st["cost"], venue), late_stages=st["late_stages"],
                           min_edge_h2h=st["min_edge_h2h"],
@@ -537,12 +549,25 @@ def tag(out, detail=None, position=None):
     return out
 
 
-def for_player(conn, user_id, out, kelly=None):
+def after_pick(markets, since):
+    """The markets with every stage priced at or before `since` (a player's pick time, profiles' `since`) made
+    untradeable, so a strategy picked mid-weekend never bets on a session that already happened (owner, 2026-10-21).
+    Strict: a pick exactly at a stage's trade time misses that stage (Mexico spec change 2, 2026-10-26)."""
+    if not since:
+        return markets
+    t0 = pd.Timestamp(since)
+    t0 = t0.tz_convert("UTC").tz_localize(None) if t0.tzinfo is not None else t0
+    return [dict(mk, stages=[dict(s, tradeable=False, thin=False) if s.get("t") is not None and _naive_utc(s["t"]) <= t0
+                             else s for s in mk["stages"]]) for mk in markets]
+
+
+def for_player(conn, user_id, out, kelly=None, since=None):
     """One user's copy of a shared computation. A registered fantasy player's taker strategy is re-run on the same
     markets sized to their F$ (fantasy/sizing.py: stakes x their strategy bankroll / grant, open cost capped at the
     bankroll); anyone else (the demo accounts, an account without a grant, a maker, a replay) gets `out` unchanged.
     The strategy's bankroll is its own grant plus its own P&L: the player's manual trades never change it.
-    kelly: the player's Kelly fraction (profiles.sizing_of of their profile; None = standard sizing)."""
+    kelly: the player's Kelly fraction (profiles.sizing_of of their profile; None = standard sizing).
+    since: the player's pick time (their profile's `since`): stages priced before it don't trade (after_pick)."""
     from racinglines.fantasy import sizing as FS
     t = out.get("_taker")
     if t is None or not out.get("stages"):
@@ -550,11 +575,60 @@ def for_player(conn, user_id, out, kelly=None):
     bank = FS.player_bankroll(conn, user_id, out["event"]["event_key"])
     if bank is None:
         return out
-    sigs, pos = taker_signals(t["markets"], FS.sized(t["params"], bank, kelly=kelly), capped=True)
-    mine = dict(out, signals=sigs, positions=pos, _taker=None, bankroll=bank)
+    sigs, pos = taker_signals(after_pick(t["markets"], since), FS.sized(t["params"], bank, kelly=kelly), capped=True)
+    mine = dict(out, signals=sigs, positions=pos, _taker=None, bankroll=bank,
+                kept=kept_positions(conn, user_id, out, t["markets"], since))
     for detail, position in t["tags"]:
         tag(mine, detail, position)
+        if position:
+            mine["kept"] = [dict(p, **position) for p in mine["kept"]]
     return mine
+
+
+def kept_positions(conn, user_id, out, markets, since):
+    """The position rows of the trades this user's strategy already made before `since` (their pick time), rebuilt
+    from the followed taker signals stored for this event, candidate and venue: a later pick (a new strategy, a
+    tweak, or the same one saved again) never erases what was traded before it (owner, 2026-10-25). store() adds
+    them to the new run's positions. A trade's shares and price are its signal's (taker_signals: limit_price is the
+    executed price, fee included), so the rows are the ones the earlier runs stored. -> [position row]"""
+    if not since:
+        return []
+    t0 = pd.Timestamp(since)
+    t0 = t0.tz_convert("UTC").tz_localize(None) if t0.tzinfo is not None else t0
+    rows = conn.execute(text("""SELECT market_key, kind, subject, action, side, shares, limit_price FROM strategy_signals
+                                WHERE user_id = :u AND candidate_id IS NOT DISTINCT FROM :c AND event_key = :e
+                                  AND detail->>'followed' = 'true' AND shares IS NOT NULL AND limit_price IS NOT NULL
+                                  AND coalesce(detail->>'venue', 'polymarket') = :v
+                                  AND signal_ts < CAST(:t AS timestamp) AT TIME ZONE 'UTC'
+                                ORDER BY signal_ts, id"""),
+                        dict(u=user_id, c=out["profile"].get("candidate_id"), e=out["event"]["event_key"],
+                             v=out.get("venue") or "polymarket", t=t0.isoformat())).mappings().all()
+    by_key = {mk["key"]: mk for mk in markets}
+    pos = {}
+    for r in rows:
+        d = r["shares"] if r["action"] == "buy" else -r["shares"]
+        p = pos.setdefault(r["market_key"], dict(market_key=r["market_key"], kind=r["kind"], subject=r["subject"],
+                                                 yes_shares=0.0, no_shares=0.0, cash=0.0))
+        p["cash"] -= d * r["limit_price"]
+        p["yes_shares" if r["side"] == "YES" else "no_shares"] += d
+    for k, p in pos.items():
+        mk = by_key.get(k)
+        last = next((s for s in reversed(mk["stages"]) if s["price"] is not None), None) if mk else None
+        p.update(mark=last["price"] if last else None, outcome=mk["outcome"] if mk else None)
+    return [_position(p) for p in pos.values()]
+
+
+def merge_positions(positions, kept):
+    """positions plus kept (kept_positions): one row per market, shares and cash summed. -> [position row]"""
+    out = {p["market_key"]: dict(p) for p in positions}
+    for k in kept:
+        p = out.get(k["market_key"])
+        if p is None:
+            out[k["market_key"]] = dict(k)
+        else:
+            for f in ("yes_shares", "no_shares", "cash"):
+                p[f] = (p.get(f) or 0.0) + (k.get(f) or 0.0)
+    return list(out.values())
 
 
 def compute_all(engine, engine_url, profile, **kw):
@@ -667,6 +741,8 @@ def store(conn, user_id, out, follow_rate=None, history=False, venue=None):
     taker = pr["strategy"] in WS.TAKER_MODES
     if taker:
         signals, positions = apply_follow(signals, positions, user_id, follow_rate)
+    if out.get("kept"):             # trades made before the player's pick time (kept_positions): never erased
+        positions = merge_positions(positions, out["kept"])
     common = dict(user_id=user_id, candidate_id=pr.get("candidate_id"), profile=pr["name"], strategy=pr["strategy"],
                   race_id=out.get("race_id"), event_key=w["event_key"])
     run_of = {lab: rid for lab, _, rid, _ in out["stages"]}
@@ -703,24 +779,44 @@ def store(conn, user_id, out, follow_rate=None, history=False, venue=None):
     return new
 
 
+def assign_pre_race(engine, now=None, echo=print):
+    """The timer pass's fantasy/follow.auto_assign for the next weekend (a no-op outside its pre-race window, and on a
+    site without the fantasy ledger). -> [(user_id, username, code)]"""
+    from racinglines.fantasy import follow as FO
+    t = _naive_utc(now) if now is not None else pd.Timestamp.now(tz="UTC").tz_localize(None)
+    _, w = pick_event(WS.schedule(t.year), t)
+    if w is None or w.get("pre_race") is None:
+        return []
+    with engine.begin() as c:
+        if not c.execute(text("SELECT to_regclass('accounts.fantasy_ledger') IS NOT NULL")).scalar():
+            return []
+        return FO.auto_assign(c, w, t, echo=echo)
+
+
 def run_all(engine, engine_url, users=None, profile_ref=None, now=None, event="next", fetch=True, alert=True,
             echo=print, venue="polymarket"):
     """Every active user with a profile (or `users`, usernames), one computation per distinct profile (a blend:
     one per member, see compute_all). venue: whose profiles (profiles.pref(venue); Polymarket, the timer's pass, by
     default); each still trades its own `venue` setting."""
     from racinglines.pipelines import profiles as PF
+    if venue == "polymarket" and event in (None, "", "next") and not users and profile_ref is None:
+        try:                                   # players with no strategy get one at the pre-race stage (rule 3);
+            assign_pre_race(engine, now, echo)  # a failure here is logged and never stops the pass's pricing
+        except Exception as ex:                # noqa: BLE001
+            echo(f"WARN auto-assign: {type(ex).__name__}: {ex}")
     with engine.connect() as c:
         targets = [(uid, prof) for uid, name, _, prof in PF.assigned(c, venue=venue) if not users or name in users]
         names = {uid: name for uid, name, _, _ in PF.assigned(c, venue=venue)}
         if profile_ref is not None:            # this profile instead of the users' own
             prof = PF.load(c, profile_ref)
             targets = [(uid, prof) for uid, _ in targets]
-    groups, rate, kelly = {}, {}, {}
+    groups, rate, kelly, since = {}, {}, {}, {}
     cache = {}                         # one measurements load and one training history per model for the whole pass
     for uid, prof in targets:
         groups.setdefault(combo_key(prof), (prof, []))[1].append(uid)
         rate[uid] = prof.get("follow_rate")
         kelly[uid] = PF.sizing_of(prof)                # a player's sizing choice (for_player; None = standard)
+        since[uid] = prof.get("since")                 # a player's pick time (for_player: later stages only)
     report = []
     for prof, uids in groups.values():
         # the Lab monitor accounts (profiles.ensure_monitors) are stored and scored like anyone, but alert nobody
@@ -729,11 +825,11 @@ def run_all(engine, engine_url, users=None, profile_ref=None, now=None, event="n
             echo(f"{prof['name']} (blend of {', '.join(m['code'] for m in prof['members'])}) for users {uids}")
             outs = compute_all(engine, engine_url, prof, now=now, event=event, fetch=fetch, echo=echo, cache=cache)
             report += [_run_one(engine, engine_url, out["profile"], out, uids, rate, now, alert_g, echo, kelly=kelly,
-                                guard=guard(prof, venue) if profile_ref is None else None) for out in outs]
+                                since=since, guard=guard(prof, venue) if profile_ref is None else None) for out in outs]
             continue
         echo(f"{prof['name']} ({prof['strategy']}) for users {uids}")
         out = compute(engine, engine_url, prof, now=now, event=event, fetch=fetch, echo=echo, cache=cache)
-        report.append(_run_one(engine, engine_url, prof, out, uids, rate, now, alert_g, echo, kelly=kelly,
+        report.append(_run_one(engine, engine_url, prof, out, uids, rate, now, alert_g, echo, kelly=kelly, since=since,
                                guard=guard(prof, venue) if profile_ref is None else None))
     return report
 
@@ -756,7 +852,8 @@ def still_assigned(conn, uids, key, venue="polymarket", sport=None):
     return [uid for uid in uids if any(i == uid and p and combo_key(p) == key for i, p in rows)]
 
 
-def _run_one(engine, engine_url, prof, out, uids, rate, now, alert, echo, upcoming="f1", kelly=None, guard=None):
+def _run_one(engine, engine_url, prof, out, uids, rate, now, alert, echo, upcoming="f1", kelly=None, guard=None,
+             since=None):
     """Store one computation for its users and alert the new signals. -> the report row. upcoming: price the next
     races between weekends (price_upcoming, the F1 Markets page's calls); None for another sport's run. guard (see
     guard()): store only for the users who still run this profile when the store starts (still_assigned)."""
@@ -776,7 +873,8 @@ def _run_one(engine, engine_url, prof, out, uids, rate, now, alert, echo, upcomi
             if len(keep) < len(uids):
                 echo(f"  users {[u for u in uids if u not in keep]} no longer run {prof['name']}: not stored for them")
             uids = keep
-        new = {uid: store(c, uid, for_player(c, uid, out, kelly=(kelly or {}).get(uid)), follow_rate=rate[uid])
+        new = {uid: store(c, uid, for_player(c, uid, out, kelly=(kelly or {}).get(uid), since=(since or {}).get(uid)),
+                          follow_rate=rate[uid])
                for uid in uids}
     if not uids:
         return dict(profile=prof["name"], stage=out["stages"][-1][0], signals=len(out["signals"]), new=0)

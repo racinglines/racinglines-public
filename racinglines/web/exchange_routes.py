@@ -30,6 +30,7 @@ def _exchange_board(request, c, user, exchange, event, show, closed, spread_pct,
     """Every listed event of one exchange (market_links.exchange), our fair values and a quote at ± spread/2.
     `sport`: a competition code (market_links.competition_id, exact match, no text/fuzzy matching) to narrow the
     list to one sport, e.g. from a Markets page "N new" link."""
+    A.guard_venue(user, exchange)                          # an admin-only exchange ([exchange] audience): 404 for the rest
     links = data.q(c, """
         SELECT ml.*, a.display_name AS athlete, co.code AS note_competition FROM market_links ml LEFT JOIN athletes a ON a.id = ml.athlete_id
         LEFT JOIN competitions co ON co.id = ml.competition_id
@@ -167,6 +168,7 @@ def _schema_routes(code):
     @app.post(f"/markets/{code}/mirror", dependencies=[Depends(on), Depends(check_csrf)], name=f"{code}_mirror")
     def mirror(request: Request, event_slug: str = Form(...), spread_pct: float = Form(4.0), c=Depends(conn),
                user=allow(*PRO)):
+        A.guard_venue(user, code)
         with get_session() as s:
             created, repriced, skipped = house.mirror_event(s, c, event_slug, user["id"], spread_pct / 100)
         audit(request, f"{code}_mirror", event_slug=event_slug, spread=spread_pct / 100, created=created, repriced=repriced,
@@ -177,6 +179,7 @@ def _schema_routes(code):
     @app.post(f"/markets/{code}/sync", dependencies=[Depends(on), Depends(check_csrf)], name=f"{code}_sync")
     def sync(request: Request, c=Depends(conn), user=allow(*PRO)):
         """Every sport the schema lists (exchanges/<code>.toml [sports.*]), the way the CLI syncs one at a time."""
+        A.guard_venue(user, code)
         from racinglines.markets import exchange_driver as D
         stats, parts = {}, []
         try:

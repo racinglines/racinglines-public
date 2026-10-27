@@ -59,7 +59,7 @@ security = HTTPBasic(realm="racinglines", auto_error=False)
 SESSION_COOKIE = "rl_session"
 SESSION_HOURS = 12
 PUBLIC_PATHS = ("/login", "/signin", "/static", "/racinglines101", "/racinglines102", "/signup", "/forgot", "/pitch", "/mybets", "/term")
-PUBLIC_EXACT = {"/", "/docs/quickstart/term", "/llms.txt", "/llms-full.txt"}  # llms*.txt: the AI-readable docs index (llmstxt.org), built from the public docs only  # public by exact path only: the landing page; a prefix would open /docs/quickstart/term/../..
+PUBLIC_EXACT = {"/", "/docs/quickstart/term", "/llms.txt", "/llms-full.txt", "/robots.txt", "/sitemap.xml", "/docs"}  # llms*.txt: the AI-readable docs index (llmstxt.org), built from the public docs only  # public by exact path only: the landing page; a prefix would open /docs/quickstart/term/../..
 
 # failed-login throttle: per client IP, MAX_FAILURES within FAILURE_WINDOW seconds -> 429
 MAX_FAILURES = 8
@@ -124,11 +124,40 @@ def _user_dict(u):
                 display_name=u.display_name or u.username)
 
 
+DOCS_ASSETS = ("assets/", "css/", "img/")     # mkdocs theme files and the docs' own css and images
+_public_docs = {"mtime": None, "pages": frozenset()}
+
+
+def public_doc(path):
+    """Whether /docs/<path> is readable signed out (owner, 2026-10-21): a page in the docs nav, the same pages
+    /llms-full.txt already publishes (site/public-pages.txt, written at build by scripts/docs/llms_txt.py), or a theme
+    asset. Never internal/ (the admin book) or a page outside the nav. The path is normalized first, so
+    /docs/quickstart/../internal/ is judged as internal/."""
+    if not path.startswith("/docs/"):
+        return False
+    rel = os.path.normpath("/" + path[len("/docs/"):]).lstrip("/")
+    if rel == "internal" or rel.startswith("internal/"):
+        return False
+    if rel.startswith(DOCS_ASSETS):
+        return True
+    f = SITE / "public-pages.txt"
+    try:
+        mtime = f.stat().st_mtime
+    except OSError:
+        return False
+    if mtime != _public_docs["mtime"]:
+        _public_docs.update(mtime=mtime, pages=frozenset(ln.strip().strip("/") for ln in f.read_text().splitlines()))
+    for suffix in ("index.html", "index.md"):
+        if rel == suffix or rel.endswith("/" + suffix):
+            rel = rel[:-len(suffix)].rstrip("/")
+    return rel in _public_docs["pages"]
+
+
 def authenticate(request: Request, creds: HTTPBasicCredentials | None = Depends(security)):
     """Signed session cookie (from /login) or HTTP Basic credentials (scripts / curl).
     The user and role are re-read from the database on every request, so
     deactivating a user or changing a role takes effect immediately."""
-    if request.url.path in PUBLIC_EXACT or request.url.path.startswith(PUBLIC_PATHS):
+    if request.url.path in PUBLIC_EXACT or request.url.path.startswith(PUBLIC_PATHS) or public_doc(request.url.path):
         return None
     uid, sid = _session(request.cookies.get(SESSION_COOKIE))
     if uid is not None:
@@ -231,7 +260,7 @@ templates = Jinja2Templates(directory=HERE / "templates")
 # Template helpers
 # ---------------------------------------------------------------------------
 
-from racinglines.web.formats import (LABELS, MONEY_COLS, SIGNED_MONEY_COLS, fmt, kind, money,  # noqa: E402,F401
+from racinglines.web.formats import (LABELS, MONEY_COLS, SIGNED_MONEY_COLS, fbucks, fmt, kind, money,  # noqa: E402,F401
                                      when)
 
 def fmt_epoch(t):
@@ -240,7 +269,7 @@ def fmt_epoch(t):
     return datetime.fromtimestamp(t, timezone.utc).strftime("%-d %b %H:%MZ") if t else ""
 
 
-templates.env.filters.update(fmt=fmt, money=money, kind=kind, when=when, fmt_epoch=fmt_epoch)
+templates.env.filters.update(fmt=fmt, money=money, fbucks=fbucks, kind=kind, when=when, fmt_epoch=fmt_epoch)
 templates.env.globals["LABELS"] = LABELS              # short column headers for the `table` macro
 # Demo-only explanations (the demo accounts' story, the demo itself) render in `demo_context` bubbles
 # (_macros.html) tagged data-tag="demo-context". RACINGLINES_DEMO_CONTEXT=0 hides them all; for real users,
@@ -282,20 +311,34 @@ from racinglines import attribution as _attribution  # noqa: E402  the one-line 
 templates.env.globals["sources_note"] = _attribution.note
 
 
-def needs_email(user):
-    """A signed-in registered account with no email on file (accounts made before 2026-10-08): base.html then shows
-    the add-email popup (owner, 2026-10-11). Demo accounts never; read at render time, False if anything fails."""
-    if not isinstance(user, dict) or not user.get("id") or _demo.is_demo(user):
-        return False
+FOLLOW_PROMPT_SKIP = ("/strategy", "/settings", "/signup", "/login", "/logout")
+
+
+def follow_prompt(user, path=""):
+    """The follow-a-strategy popup (_site_notice.html; owner, 2026-10-21, replacing the add-email popup): a signed-in
+    registered account that follows nothing, under the alpha layout, off the strategy and settings pages, and not
+    between a weekend's last-chance cutoff and the end of its window (follow.open_weekend: a pick is refused then). -> dict(opts, venues) for the popup, or None.
+    Read at render time; None if anything fails."""
+    if not isinstance(user, dict) or not user.get("id") or _demo.is_demo(user) or not _layout.alpha():
+        return None
+    if any(path == p or path.startswith(p + "/") for p in FOLLOW_PROMPT_SKIP):
+        return None
     try:
+        from racinglines.fantasy import follow as FW
+        from racinglines.pipelines import profiles as PF
         with get_engine().connect() as c:
-            email = c.execute(text("SELECT prefs->>'email' FROM users WHERE id = :u"), dict(u=user["id"])).scalar()
+            if PF.of_user(c, user["id"]) is not None:
+                return None
+            chosen = FW.venues_of(c, user["id"])
+        if FW.open_weekend() is not None:          # past the last-chance cutoff: a pick would be refused
+            return None
+        return dict(opts=FW.options(user), venues=[dict(key=k, label=lab, live=live, note=note, on=k in chosen)
+                                                   for k, lab, live, note in FW.VENUES])
     except Exception:                                   # noqa: BLE001  the popup never breaks a page
-        return False
-    return not (email or "").strip()
+        return None
 
 
-templates.env.globals["needs_email"] = needs_email
+templates.env.globals["follow_prompt"] = follow_prompt
 templates.env.globals["ui_range"] = _ranges.ui_range                             # capped numeric inputs (web/ranges.py)
 from racinglines.fantasy import ledger as _FL  # noqa: E402
 templates.env.globals["fantasy_on"] = _FL.on                                    # /trade and /history (staging only)
@@ -350,7 +393,7 @@ def render(request, name, **ctx):
     ctx.setdefault("trading", polymarket.TradingConfig.from_env())
     ctx.setdefault("user", getattr(request.state, "user", None))
     ctx.setdefault("signals_nav", _signals_nav(ctx["user"]))
-    ctx.setdefault("schema_exchanges", V.SCHEMA_EXCHANGES)      # venues defined as schemas whose switch is on (none by default)
+    ctx.setdefault("schema_exchanges", _audience.venues(ctx["user"], V.SCHEMA_EXCHANGES))   # schema venues whose switch is on, for this user
     ctx.setdefault("tapes", V.TAPES)                            # RACINGLINES_TAPES=1: the tape-only sports' market data
     try:                                               # a live event (pipelines/live.py): the Live tab, green while
         from racinglines.pipelines.live import state      # it runs, grey once it is over (a replay)
@@ -431,6 +474,7 @@ SITE = ROOT / "site"     # the built docs (mkdocs build -d site; the pre-push ho
 # ---------------------------------------------------------------------------
 
 from racinglines.paths import HOSTED as LANDING  # noqa: E402  (racinglines.bet's landing page; not in the public package)
+templates.env.globals["site_url"] = "https://racinglines.bet" if LANDING else ""   # canonical/OG links, hosted site only
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -559,29 +603,6 @@ def update_settings(request: Request, email: str = Form(""), exchange: str = For
         email=email, exchange=exchange, sports=sports, success="Settings saved", **_mcp_context(user),
         hidden_sports=_audience.hidden(user),
     ))
-
-
-@app.post("/settings/email", dependencies=[Depends(check_csrf), allow(*ANY)])
-def add_email(request: Request, email: str = Form(""), next: str = Form("/markets")):
-    """The add-email popup (_site_notice.html) for accounts with no email: saves users.prefs.email after the sign-up
-    checks (valid, on no other account) and goes back to the page; an error opens Settings with the message."""
-    from racinglines.web import accounts as ACC
-    user = request.state.user
-    if _demo.is_demo(user):
-        raise HTTPException(404)
-    email = email.strip().lower()
-    with get_engine().begin() as c:
-        error = ACC.check_email(c, email)
-        if not error:
-            c.execute(text("""UPDATE users SET prefs = coalesce(prefs, '{}'::jsonb) || jsonb_build_object('email', CAST(:e AS text))
-                              WHERE id = :u"""), dict(e=email, u=user["id"]))
-    if error:
-        prefs = _prefs(user["id"])
-        return templates.TemplateResponse(request, "settings.html", dict(
-            email=email, exchange=prefs.get("exchange", "polymarket"), sports=prefs.get("sports", ["f1"]),
-            error=error, **_mcp_context(user), hidden_sports=_audience.hidden(user)), status_code=400)
-    audit(request, "add_email")
-    return RedirectResponse(_safe_next(next), status_code=303)
 
 
 # ---------------------------------------------------------------------------

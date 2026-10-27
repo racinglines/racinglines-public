@@ -172,7 +172,7 @@ class Result(Base):
     round_id: Mapped[int] = mapped_column(ForeignKey("rounds.id", ondelete="CASCADE"))
     athlete_id: Mapped[int] = mapped_column(ForeignKey("athletes.id"), index=True)
     position: Mapped[int | None] = mapped_column(Integer)               # official rank; null if not classified
-    status: Mapped[str] = mapped_column(String(10))                     # OK | DNF | DNS | DSQ
+    status: Mapped[str] = mapped_column(String(10))                     # OK | DNF | DNS | DSQ | DNQ (alpine: did not qualify for run 2)
     time_ms: Mapped[int | None] = mapped_column(BigInteger)
     bib: Mapped[str | None] = mapped_column(String(20))
     team: Mapped[str | None] = mapped_column(String(200))

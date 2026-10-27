@@ -157,6 +157,9 @@ def main(argv=None):
     p.add_argument("--fetch-only", action="store_true", help="Only download the season's Polymarket history/trades.")
     p.add_argument("--reprice", action="store_true", help="Re-price stages even if stored.")
     p.add_argument("--save", action="store_true")
+    p.add_argument("--trades-out", default=None, metavar="DIR",
+                   help="Also write every trade (with touch bid / ask / sizes and outcome) to DIR/trades.parquet "
+                        "(--grid: DIR/trades-<job>.parquet per combo). Results are unchanged.")
     p.add_argument("--reliability", action="store_true",
                    help="Also score calibration: our fair values and Polymarket's prices at every tradeable stage, "
                         "per market kind (Brier, log loss, ECE, reliability bins); saved with --save.")
@@ -1043,11 +1046,15 @@ def _run(args):
                     for k, v in out["totals"].items():
                         print(f"{k:7s} P&L {v['pnl']:+9.2f} on ${v['bought']:,.0f} · "
                               f"{v['weekends_up']}/{v['weekends']} weekends up · {CLV.sweep_line(out.get('clv'), k)}")
+                    if args.trades_out:
+                        print("Trades ->", SW.write_trades(out, args.trades_out, "trades-" + str(e["job"])), flush=True)
                     if args.save:
                         print(f"Saved sweep run {_save_sweep(args, out)} for job {e['job']}.", flush=True)
             return
         out = SW.run_sweep(engine, args.db, args.year, rounds, fetch=not args.no_fetch, reprice=args.reprice,
                            settings=settings, echo=lambda m: print(m, flush=True))
+        if args.trades_out:
+            print(f"Trades -> {SW.write_trades(out, args.trades_out)}", flush=True)
         w = out["weekends"]
         cols = [c for c in ["event_key", "event", "format", "stages", "tradeable_pre", "tradeable_quali",
                             "update_trades", "update_bought", "update_pnl", "hold_pnl", "last_pnl", "maker_fills",
@@ -1164,6 +1171,8 @@ def _run(args):
     if args.cmd in ("diagnostic", "combo") and args.calib_power:     # the sweep sets it through its Settings
         from racinglines.models import calibration as CAL
         calib = run.M.CALIB_POWER = CAL.parse(args.calib_power)
+    if args.cmd in ("diagnostic", "combo") and calib is None:
+        calib = run.M.CALIB_POWER                                   # saved with the run, so it reads back as priced
 
     if args.cmd == "compare":
         from racinglines.models import evaluate as EV
@@ -1304,7 +1313,8 @@ def _run(args):
             params = dict(cutoff=extras["cutoff"], half_life_days=run.M.HALF_LIFE_DAYS, sims=args.sims,
                           track_features=use_track, label=args.scenario,
                           features=run.M.FEATURES, coef=[float(c) for c in fm.coef], sigma=fm.sigma,
-                          sigma_q=fm.sigma_q, drift=extras["drift"])
+                          sigma_q=fm.sigma_q, drift=extras["drift"],
+                          calib_power=run.M.CALIB_POWER or "off")     # per-race prices come from price_race
             run_id = run.save_forecast(args.db, args.year, per_event, standings, params, metrics=dict(
                 latest_data=extras["latest_data"], constructors=records(extras["constructors"]),
                 race_constructor_top=extras["race_constructor_top"], car_gaps=extras["car_gaps"]), kind="scenario" if args.scenario else "forecast")

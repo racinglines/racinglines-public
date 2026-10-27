@@ -10,7 +10,7 @@ from racinglines import sports
 from racinglines.core.stats import ranks
 
 RNG = np.random.default_rng(42)
-_SPORT = sports.declaring("run_times", None)          # the sport whose [model] inputs declare run_times
+_SPORT = sports.declaring_first("run_times", None)          # the sport whose [model] inputs declare run_times
 SCHEMA = sports.load(_SPORT) if _SPORT else {"points": {}, "rounds": {}}   # none installed: empty (public release, F1 only)
 
 # ---------------------------------------------------------------------------
@@ -60,12 +60,41 @@ PRIOR_N = 0.5                 # shrinkage of rider pace toward the field median 
 INCIDENT_THRESHOLD = 0.04     # finished >4% slower than expected = incident
 EPS_DF = None                 # run noise eps: None = normal; a number = Student-t with these degrees of
                               # freedom, scaled to the same sd (heavier tails; docs/todo.md, Model)
+STARTED = ("OK", "DNF", "DSQ")   # a row that took the start
 
 
-def select_target(raw, season=None, category="ME"):
+def default_cfg():
+    """The schema-derived constants the functions below read, as one dict: the import-time schema's values (the first
+    sport declaring run_times). RunTimesCore.bind builds the same dict from any sport's schema (cfg_from_schema), so a
+    second timed-runs sport is bound per sport while this module's constants stay what they were."""
+    return dict(final_points=FINAL_POINTS, qual_points=QUAL_POINTS, qual_points_round=QUAL_POINTS_ROUND,
+                default_format=DEFAULT_FORMAT, category_format=CATEGORY_FORMAT, race_rounds=RACE_ROUNDS,
+                run_weights=RUN_WEIGHTS, category_weights=CATEGORY_WEIGHTS, cumulative_final=False,
+                starters_only=False, result_round="final")
+
+
+def cfg_from_schema(schema):
+    """`default_cfg()` built from a sport's schema ([points], [rounds]). Optional [rounds] keys for sports whose runs
+    are not downhill's: `cumulative_final` (the final is ranked on qualifier + final time: alpine's two runs),
+    `starters_only` (field sizes count rows that took the start: OK, DNF, DSQ), `result_round` (the round holding the
+    official classification used to settle, default "final"), `map` (data round names -> these canonical names,
+    applied by the core when it loads), `season` ("schema": seasons are the schema's seasons.year, not the calendar
+    year of the event date)."""
+    r, p = schema.get("rounds", {}), schema.get("points", {})
+    return dict(final_points=list(p.get("final", ())), qual_points=list(p.get("qual", ())),
+                qual_points_round=dict(p.get("qual_round", {})), default_format=dict(r.get("default_format", {})),
+                category_format={k: dict(v) for k, v in r.get("category_format", {}).items()},
+                race_rounds=tuple(r.get("race", ())), run_weights=dict(r.get("run_weights", {})),
+                category_weights={**CATEGORY_WEIGHTS, **dict(r.get("category_weights", {}))},
+                cumulative_final=bool(r.get("cumulative_final", False)), starters_only=bool(r.get("starters_only", False)),
+                result_round=r.get("result_round", "final"))
+
+
+def select_target(raw, season=None, category="ME", season_col=None):
     """Rows of the season + category being predicted (season defaults to the
-    latest year in the data)."""
-    year = raw["event_date"].astype(str).str[:4]
+    latest year in the data). season_col "season": the frame's season column (the schema's seasons.year) instead of
+    the calendar year of the event date."""
+    year = raw["season"].astype(str) if season_col == "season" else raw["event_date"].astype(str).str[:4]
     season = str(season or year.max())
     return raw[(year == season) & (raw["category"] == category)]
 
@@ -83,13 +112,19 @@ def event_order(raw):
     return raw.groupby("event_id")["event_date"].min().sort_values().index.tolist()
 
 
-def event_format(raw, event_id):
+def event_format(raw, event_id, cfg=None):
     """Infer an event's weekend format and field sizes from its own results
     (the format is published before the race, so this is fair in backtests).
-      q1q2   Q1 top k go straight to the final, the rest ride Q2 (2025-26 elite)
-      semi   qualifier -> semi-final -> final                (2023-24 elite)
-      single qualifier -> final                   (juniors, elite up to 2022)"""
+      q1q2       Q1 top k go straight to the final, the rest ride Q2 (2025-26 elite)
+      semi       qualifier -> semi-final -> final                (2023-24 elite)
+      single     qualifier -> final                   (juniors, elite up to 2022)
+      two_run    qualifier -> final, ranked on qualifier + final time (cfg cumulative_final: alpine's two runs)
+      single_run one timed run decides (a qualifier and no final: alpine speed races)
+      final_only one timed run, stored as the final"""
+    cfg = cfg or default_cfg()
     ev = raw[(raw["event_id"] == event_id) & (raw["sector_id"] == "FINISH")]
+    if cfg["starters_only"]:
+        ev = ev[ev["status"].isin(STARTED)]
     entered = lambda r: set(ev.loc[ev["round"] == r, "rider_id"])
     final = entered("final")
     if entered("qual1"):
@@ -97,56 +132,68 @@ def event_format(raw, event_id):
         return dict(kind="q1q2", q1_to_final=len(final - q2), q2_to_final=len(final & q2))
     if entered("semi"):
         return dict(kind="semi", to_semi=len(entered("semi")), to_final=len(final))
+    qual = entered("qual")
+    if qual and not final:
+        return dict(kind="single_run", to_final=len(qual))
+    if final and not qual and cfg["starters_only"]:
+        return dict(kind="final_only", to_final=len(final))
+    if cfg["cumulative_final"]:
+        return dict(kind="two_run", to_final=len(final))
     return dict(kind="single", to_final=len(final))
 
 
-def unraced_format(target, done, mode="default"):
+def unraced_format(target, done, mode="default", cfg=None):
     """The format an unraced round is simulated in. mode "default" (today): DEFAULT_FORMAT, the 2026 elite men's,
     for every category. "last": the target's latest completed event's own format (event_format; the target is
     one category and season, so women and juniors get their own field sizes), else CATEGORY_FORMAT for the
     category, else DEFAULT_FORMAT."""
+    cfg = cfg or default_cfg()
     if mode == "default":
-        return DEFAULT_FORMAT
+        return cfg["default_format"]
     if mode != "last":
         raise ValueError(f"unraced format mode must be 'default' or 'last', not {mode!r}")
     events = [e for e in event_order(target) if e in set(done)]
     if events:
-        return event_format(target, events[-1])
+        return event_format(target, events[-1], cfg)
     cat = target["category"].iloc[0] if "category" in target and len(target) else None
-    return CATEGORY_FORMAT.get(cat, DEFAULT_FORMAT)
+    return cfg["category_format"].get(cat, cfg["default_format"])
 
 
-def actual_event_points(raw):
-    """Championship points actually scored, one row per rider per event."""
+def actual_event_points(raw, cfg=None):
+    """Championship points actually scored, one row per rider per event (the final's rank from cfg result_round)."""
+    cfg = cfg or default_cfg()
     fin = raw[(raw["sector_id"] == "FINISH") & (raw["status"] == "OK")]
-    qual_round = {e: QUAL_POINTS_ROUND[event_format(raw, e)["kind"]] for e in fin["event_id"].unique()}
+    qual_round = {e: cfg["qual_points_round"].get(event_format(raw, e, cfg)["kind"], "") for e in fin["event_id"].unique()}
     fin_q = fin[fin["round"] == fin["event_id"].map(qual_round)]
     q = fin_q.set_index(["event_id", "rider_id"])["rank_at_split"]
-    f = fin[fin["round"] == "final"].set_index(["event_id", "rider_id"])["rank_at_split"]
+    f = fin[fin["round"] == cfg["result_round"]].set_index(["event_id", "rider_id"])["rank_at_split"]
     idx = q.index.union(f.index)
     out = pd.DataFrame(index=idx)
     out["qual_rank"] = q.reindex(idx)
     out["final_rank"] = f.reindex(idx)
-    out["qual_pts"] = points_for(out["qual_rank"], QUAL_POINTS)
-    out["final_pts"] = points_for(out["final_rank"], FINAL_POINTS)
+    out["qual_pts"] = points_for(out["qual_rank"], cfg["qual_points"])
+    out["final_pts"] = points_for(out["final_rank"], cfg["final_points"])
     out["points"] = out["qual_pts"] + out["final_pts"]
     return out.reset_index()
 
 
-def event_starters(raw, event_id):
-    """Riders who actually took the start of the first qualifier (not DNS)."""
+def event_starters(raw, event_id, cfg=None):
+    """Riders who actually took the start of the first qualifier (not DNS); the final's starters when the event has
+    no qualifier (final_only)."""
     ev = raw[(raw["event_id"] == event_id) & (raw["sector_id"] == "FINISH")]
-    first = "qual1" if (ev["round"] == "qual1").any() else "qual"
+    first = "qual1" if (ev["round"] == "qual1").any() else ("qual" if (ev["round"] == "qual").any() else "final")
     q1 = ev[ev["round"] == first]
     return q1.loc[q1["status"] != "DNS", "rider_id"].unique().tolist()
 
 
 def fit_season_model(raw, category="ME", half_life_days=HALF_LIFE_DAYS, category_weights=None,
-                     prior_n=PRIOR_N, incident_prior_n=8.0, n_iter=30):
+                     prior_n=PRIOR_N, incident_prior_n=8.0, n_iter=30, cfg=None):
     """Fit rider pace / noise / incident model on every row of `raw` (any
     season or category). Pooled noise and incident parameters come from
     `category` only, since that's the field being simulated."""
-    cat_w = {**CATEGORY_WEIGHTS, **(category_weights or {})}
+    cfg = cfg or default_cfg()
+    RUN_WEIGHTS, RACE_ROUNDS = cfg["run_weights"], cfg["race_rounds"]
+    cat_w = {**cfg["category_weights"], **(category_weights or {})}
     fin = raw[(raw["sector_id"] == "FINISH") & raw["round"].isin(RUN_WEIGHTS)].copy()
     dates = pd.to_datetime(fin["event_date"])
     fin["run"] = fin["event_id"] + "|" + fin["round"]
@@ -203,14 +250,15 @@ def fit_season_model(raw, category="ME", half_life_days=HALF_LIFE_DAYS, category
                 names=names)
 
 
-def simulate_weekend(model, riders, n_sims=10000, attend_prob=None, rng=RNG, fmt=None, u_prior=None):
+def simulate_weekend(model, riders, n_sims=10000, attend_prob=None, rng=RNG, fmt=None, u_prior=None, cfg=None):
     """Simulate a race weekend for `riders` in format `fmt` (see
     event_format; default = 2026 format). u_prior = (mean, sd) arrays for each
     rider's weekend effect, e.g. from this weekend's timed training (see
     weekend_prior); default N(0, tau). Returns dict of (n_sims, n) arrays:
     qual_rank (the points-paying qualifier), final_rank (inf = didn't run or
     finish), made_final, points."""
-    fmt = fmt or DEFAULT_FORMAT
+    cfg = cfg or default_cfg()
+    fmt = fmt or cfg["default_format"]
     n = len(riders)
     mu = model["mu"].reindex(riders).fillna(model["mu_new"]).to_numpy()
     p_inc = model["p_inc"].reindex(riders).fillna(model["p0"]).to_numpy()
@@ -243,11 +291,24 @@ def simulate_weekend(model, riders, n_sims=10000, attend_prob=None, rng=RNG, fmt
         to_semi = ranks(run(starts)) <= fmt["to_semi"]
         qual = ranks(run(to_semi))           # semi-final ranks
         to_final = qual <= fmt["to_final"]
+    elif fmt["kind"] == "two_run":                       # qualifier + final, ranked on the summed times
+        t1 = run(starts)
+        qual = ranks(t1)
+        to_final = qual <= fmt["to_final"]
+        t2 = run(to_final)
+        total = np.where(to_final & np.isfinite(t1) & np.isfinite(t2), np.exp(t1) + np.exp(t2), np.inf)
+        final = ranks(total)
+        points = points_for(qual, cfg["qual_points"]) + points_for(final, cfg["final_points"])
+        return dict(qual_rank=qual, final_rank=final, made_final=to_final, points=points)
+    elif fmt["kind"] in ("single_run", "final_only"):   # one timed run decides
+        final = ranks(run(starts))
+        points = points_for(final, cfg["final_points"])
+        return dict(qual_rank=final, final_rank=final, made_final=starts, points=points)
     else:
         qual = ranks(run(starts))
         to_final = qual <= fmt["to_final"]
     final = ranks(run(to_final))
-    points = points_for(qual, QUAL_POINTS) + points_for(final, FINAL_POINTS)
+    points = points_for(qual, cfg["qual_points"]) + points_for(final, cfg["final_points"])
     return dict(qual_rank=qual, final_rank=final, made_final=to_final, points=points)
 
 

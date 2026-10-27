@@ -177,21 +177,33 @@ def rows_from_cycling(path):
             rows.append(dict(ROW, id=f"win-{r['rider']}", title="Winner", selection=str(r["rider"]), kind="winner",
                              group="Win", odds=odds, decimal_odds=odds, book_prob=None if odds is None else 1 / odds,
                              model_prob=float(r["win_p"])))
+            podds = r.get("podium_book")      # optional: the book's top-3 price, priced against the model's podium chance
+            if podds is not None and not pd.isna(podds) and not pd.isna(r.get("podium_p")):
+                rows.append(dict(ROW, id=f"pod-{r['rider']}", title="Podium", selection=str(r["rider"]), kind="podium",
+                                 group="Podium", odds=float(podds), decimal_odds=float(podds), book_prob=1 / float(podds),
+                                 model_prob=float(r["podium_p"])))
     mu = files.get("matchups.csv")
     if mu is not None and mu.exists():
         for r in pd.read_csv(mu).to_dict("records"):
-            for a, b, o, pr in ((r["a"], r["b"], r["a_odds"], r["a_p"]), (r["b"], r["a"], r["b_odds"], r["b_p"])):
+            for a, b, o, pr, bx in ((r["a"], r["b"], r["a_odds"], r["a_p"], r.get("a_box")),
+                                    (r["b"], r["a"], r["b_odds"], r["b_p"], r.get("b_box"))):
+                box = None       # optional a_box / b_box columns: "x,y,w,h" on the board screenshot (hud labels)
+                if isinstance(bx, str) and bx.strip():
+                    box = [int(float(v)) for v in bx.split(",")]
                 rows.append(dict(ROW, id=f"h2h-{a}-{b}", title="Head to Head", selection=str(a), opponent=str(b),
                                  kind="h2h", group="Head-to-head", odds=float(o), decimal_odds=float(o),
-                                 book_prob=1 / float(o), model_prob=float(pr)))
+                                 book_prob=1 / float(o), model_prob=float(pr), box=box))
     settings = files.get("settings.csv")
     sline = ""
     if settings is not None and settings.exists():
         s = pd.read_csv(settings).iloc[0].to_dict()
         sline = " · settings " + ", ".join(f"{k}={v:g}" if isinstance(v, float) else f"{k}={v}" for k, v in s.items())
     mtime = max(f.stat().st_mtime for f in files.values() if f.exists())
-    meta = dict(venue=None, event=folder.name, sport="road_cycling", captured_utc=None, event_name=folder.name,
-                odds="decimal", image=None, models=[f"road-cycling model, {folder.name}/" + sline],
+    sdict = pd.read_csv(settings).iloc[0].to_dict() if settings is not None and settings.exists() else {}
+    sport = str(sdict.get("sport") or "road_cycling")          # settings.csv may name the sport and model
+    mlabel = str(sdict.get("model") or "road-cycling model")
+    meta = dict(venue=None, event=folder.name, sport=sport, captured_utc=None, event_name=folder.name,
+                odds="decimal", image=None, models=[f"{mlabel}, {folder.name}/" + sline],
                 model_source=f"racinglines model price cycling output, written "
                              f"{datetime.fromtimestamp(mtime, timezone.utc):%Y-%m-%dT%H:%MZ}",
                 syncs={})

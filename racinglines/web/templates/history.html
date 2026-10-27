@@ -1,26 +1,26 @@
-{% extends "base.html" %}{% from "_macros.html" import chart as svg_chart, empty, flash, kpi, pnl, page_head, source_note %}
+{% extends "base.html" %}{% from "_macros.html" import chart as svg_chart, empty, flash, fpnl, kpi, page_head, source_note %}
 {% block title %}History{% endblock %}
 {% block content %}
-{# web/fantasy_routes.py history_page: the alpha's History tab (web/layout.py). Your F$, every trade by hand and by the
-   strategy you follow, F$ through the run, and the leaderboard (fantasy/ledger.ranked: ROI x sqrt(trades)). #}
-{% call page_head("History", "Every trade you have made, your fantasy bucks through the run, and the leaderboard. F$ only: nothing here is real money, and no order ever reaches an exchange.") %}
+{# web/fantasy_routes.py history_page: the alpha's History tab (web/layout.py). Your Ⓕ, every trade by hand and by the
+   strategy you follow, Ⓕ through the run, and the leaderboard (fantasy/ledger.ranked: ROI x (trades / 10)^0.3). #}
+{% call page_head("History", "Every trade you have made, your fantasy bucks through the run, and the leaderboard. All amounts are F-bucks (Ⓕ), which have no monetary value: nothing here is real money, and no order ever reaches an exchange. One Ⓕ is sized 1:1 with the dollar stablecoins (e.g. USDT) traded on prediction markets, so stakes and prices match the real books.") %}
 <a href="/trade">Trade →</a> · <a href="#leaderboard">Leaderboard ↓</a>{% endcall %}
 {{ flash(msg) }}
 {% if not ready %}<div class="card"><h2>Not open yet</h2><p>Fantasy trading hasn't been set up on this site yet.</p></div>{% else %}
 
 <div class="kpis hero">
-  {{ kpi("Total F$", "F${:,.2f}".format(s.total), "your 1,000 plus both P&Ls" ~ (" · rank " ~ mine.rank ~ " of " ~ rows|selectattr("rank")|list|length if mine and mine.rank else "")) }}
-  {{ kpi("Cash", "F${:,.2f}".format(s.cash), "what you can trade with now") }}
-  {{ kpi("By hand", s.manual_pnl, s.open ~ " open, worth " ~ "F$%.2f"|format(s.held) ~ " now" ~ (" (" ~ s.unpriced ~ " unpriced)" if s.unpriced else ""), "money") }}
-  {{ kpi("Strategy", s.strategy_pnl, (profile.name if profile else "none picked") ~ " · " ~ s.strategy_positions ~ " positions", "money") }}
+  {{ kpi("Total Ⓕ", "Ⓕ{:,.2f}".format(s.total), "your 1,000 plus both P&Ls" ~ (" and an adjustment of " ~ "Ⓕ{:,.2f}".format(s.adjustment) if s.adjustment else "") ~ (" · rank " ~ mine.rank ~ " of " ~ rows|selectattr("rank")|list|length if mine and mine.rank else "")) }}
+  {{ kpi("Cash", "Ⓕ{:,.2f}".format(s.cash), "what you can trade with now") }}
+  {{ kpi("By hand", s.manual_pnl, s.open ~ " open, worth " ~ "Ⓕ%.2f"|format(s.held) ~ " now" ~ (" (" ~ s.unpriced ~ " unpriced)" if s.unpriced else ""), "fbucks") }}
+  {{ kpi("Strategy", s.strategy_pnl, (profile.name if profile else "none picked") ~ " · " ~ s.strategy_positions ~ " positions", "fbucks") }}
 </div>
 {{ source_note(note_sport, note_venues, model=(profile is not none)) }}
 
-<div class="card"><h2>F$ by hand through the run</h2>
+<div class="card"><h2>Ⓕ by hand through the run</h2>
 {% if chart %}{{ svg_chart(chart) }}
 <p class="muted">Each point is after an order, with open trades at what they cost (so a trade moves it only by its fee);
 the last point, marked "now", values open trades at what they would sell for now.</p>
-{% else %}{{ empty("Your F$ through the run shows here once you have traded by hand.") }}{% endif %}</div>
+{% else %}{{ empty("Your Ⓕ through the run shows here once you have traded by hand.") }}{% endif %}</div>
 
 <div class="card"><h2>Open trades</h2>
 {% if positions %}<div class="scroll"><table>
@@ -29,7 +29,7 @@ the last point, marked "now", values open trades at what they would sell for now
   <td class="wrap"><a href="/trade?link={{ p.market_link_id }}">{{ p.group_title or p.question }}</a><div class="muted">{{ p.event_title or "" }} · {{ p.exchange|capitalize }}</div></td>
   <td><span class="pill {{ p.side }}">{{ p.side|upper }}</span></td>
   <td class="num">{{ "%g"|format(p.shares) }}</td><td class="num">{{ "%.2f"|format(p.cost) }}</td>
-  <td class="num">{{ "%.2f"|format(p.value) if p.value is not none else "–" }}</td><td class="num">{{ pnl(p.pnl) }}</td>
+  <td class="num">{{ "%.2f"|format(p.value) if p.value is not none else "–" }}</td><td class="num">{{ fpnl(p.pnl) }}</td>
   <td><a href="/trade?link={{ p.market_link_id }}&action=sell&side={{ p.side }}">Sell</a></td>
 </tr>{% endfor %}</tbody></table></div>
 {% else %}{{ empty("No open trades. Trades you make by hand show here.") }}{% endif %}</div>
@@ -42,10 +42,10 @@ the last point, marked "now", values open trades at what they would sell for now
   <td>{% if p.side %}<span class="pill {{ p.side }}">{{ p.side|upper }}</span>{% else %}–{% endif %}</td>
   <td class="num">{{ "%g"|format(p.shares) }}</td><td class="num">{{ "%.2f"|format(p.cost) }}</td>
   <td>{% if p.outcome is none %}{{ p.status }}{% else %}{{ "YES" if p.outcome else "NO" }}{% endif %}</td>
-  <td class="num">{{ "%.2f"|format(p.payout) if p.payout is not none else "–" }}</td><td class="num">{{ pnl(p.pnl) if p.pnl is not none else "–" }}</td>
+  <td class="num">{{ "%.2f"|format(p.payout) if p.payout is not none else "–" }}</td><td class="num">{{ fpnl(p.pnl) if p.pnl is not none else "–" }}</td>
   <td>{{ p.settled_at|fmt }}</td>
 </tr>{% endfor %}</tbody></table></div>
-<p class="muted">Each share of the winning side paid F$1 when the market resolved; P&amp;L is the payout less what the shares cost (fees are in your orders).</p>
+<p class="muted">Each share of the winning side paid Ⓕ1 when the market resolved; P&amp;L is the payout less what the shares cost (fees are in your orders).</p>
 {% else %}{{ empty("No settled trades yet. A trade by hand shows here once its market resolves and pays out.") }}{% endif %}</div>
 
 <div class="card"><h2>Orders by hand <span class="muted">{{ orders|length }}</span></h2>
@@ -66,7 +66,7 @@ the last point, marked "now", values open trades at what they would sell for now
 <tbody>{% for r in strat %}<tr>
   <td class="wrap">{{ r.event_name or r.event_key }}</td><td>{{ r.kind|kind }}</td><td class="wrap">{{ r.subject }}</td>
   <td>{% if r.side %}<span class="pill {{ r.side }}">{{ r.side|upper }}</span>{% else %}–{% endif %}</td>
-  <td>{{ r.state }}</td><td class="num">{{ pnl(r.pnl) if r.pnl is not none else "–" }}</td>
+  <td>{{ r.state }}</td><td class="num">{{ fpnl(r.pnl) if r.pnl is not none else "–" }}</td>
 </tr>{% endfor %}</tbody></table></div>
 <p class="muted">Paper trades the strategy made for you at the exchanges' recorded prices. <a href="/positions">Its positions, stage by stage →</a></p>
 {% elif profile %}{{ empty("The strategy you follow hasn't traded yet. It trades on race weekends.") }}
@@ -78,13 +78,13 @@ the last point, marked "now", values open trades at what they would sell for now
 <thead><tr><th class="num">#</th><th>Player</th><th class="num">Score</th><th class="num">ROI</th><th class="num">Trades</th><th class="num">P&amp;L</th><th class="num">By hand</th><th class="num">Strategy</th></tr></thead>
 <tbody>{% for r in rows %}<tr{% if user and r.username == user.username %} class="sel"{% endif %}>
   <td class="num">{{ r.rank if r.rank else "–" }}</td><td>{{ r.username }}{% if user and r.username == user.username %} <span class="pill new">you</span>{% endif %}</td>
-  <td class="num">{% if r.score is not none %}<b>{{ "%.2f"|format(r.score) }}</b>{% else %}<span class="muted">–</span>{% endif %}</td>
+  <td class="num">{% if r.score is not none %}<b>{{ "%.1f pts"|format(r.score * 100) }}</b>{% else %}<span class="muted">–</span>{% endif %}</td>
   <td class="num">{{ "%.1f%%"|format(r.roi * 100) if r.roi is not none else "–" }}</td><td class="num">{{ r.trades }}</td>
-  <td class="num">{{ pnl(r.pnl) }}</td><td class="num">{{ pnl(r.manual_pnl) }}</td><td class="num">{{ pnl(r.strategy_pnl) }}</td>
+  <td class="num">{{ fpnl(r.pnl) }}</td><td class="num">{{ fpnl(r.manual_pnl) }}</td><td class="num">{{ fpnl(r.strategy_pnl) }}</td>
 </tr>{% endfor %}</tbody></table></div>
-<p class="muted">Score = ROI × √trades, where ROI is P&amp;L (by hand plus strategy) over the F$ staked, and trades counts
+<p class="muted">Points = 100 × ROI × (trades ÷ 10)<sup>0.3</sup>, shown to tenths, so ten times the trades doubles the boost at the same ROI, where ROI is P&amp;L (by hand plus strategy) over the Ⓕ staked, and trades counts
 your filled orders plus the markets your strategy traded. A player needs {{ min_trades }} trades to be ranked; those with
-fewer are listed after, with "–" for rank. Open trades count at what they would sell for now (the best recorded bid).
+fewer are listed after, with "–" for rank. Only settled trades count here: open trades are never counted, and only you see yours, on your own positions.
 The demo accounts aren't listed.</p>
 {% else %}{{ empty("No players yet.") }}{% endif %}</section>
 {% endblock %}

@@ -15,7 +15,7 @@
 {% macro page_head(title, sub="") %}<div class="page-head"><div><h1>{{ title }}</h1>{% if sub %}<p class="sub">{{ sub }}</p>{% endif %}</div>{% if caller %}<div class="actions">{{ caller() }}</div>{% endif %}</div>{% endmacro %}
 {# A headline number: label, value, one line under it. tone: "money" colours the value by sign; else a class. #}
 {% macro kpi(label, value, sub="", tone="", cls="", small=False) -%}
-<div class="kpi {{ cls }}"><div class="l">{{ label }}</div><div class="v{{ ' sm' if small }} {{ pnl_cls(value) if tone == 'money' else tone }}">{{ value|money(true) if tone == 'money' else value }}</div>{% if sub %}<div class="s">{{ sub }}</div>{% endif %}</div>
+<div class="kpi {{ cls }}"><div class="l">{{ label }}</div><div class="v{{ ' sm' if small }} {{ pnl_cls(value) if tone in ('money', 'fbucks') else tone }}">{{ value|money(true) if tone == 'money' else (value|fbucks(true) if tone == 'fbucks' else value) }}</div>{% if sub %}<div class="s">{{ sub }}</div>{% endif %}</div>
 {%- endmacro %}
 {% macro pnl_cls(v) %}{{ 'good' if v is not none and v > 0 else ('bad' if v is not none and v < 0 else '') }}{% endmacro %}
 {# One sport_status.py cell (state ok|partial|none|na, short, text, sub) as a fixed-width quick-look badge: a
@@ -23,6 +23,8 @@
 {% macro status_badge(label, x) %}{% set cls = {"ok": "good", "partial": "warn", "none": "bad", "na": "muted"}[x.state] %}<span class="qs" title="{{ x.text }}{% if x.sub %} — {{ x.sub }}{% endif %}"><i class="dot {{ cls }}"></i><b>{{ x.short }}</b> {{ label }}</span>{% endmacro %}
 {# A signed money amount coloured by its sign: +$12.30 green, -$4.00 red, $0.00 plain. #}
 {% macro pnl(v, bold=False) %}{% if v is not none %}<{{ 'b' if bold else 'span' }} class="{{ pnl_cls(v) }}">{{ v|money(true) }}</{{ 'b' if bold else 'span' }}>{% endif %}{% endmacro %}
+{# The same in F-bucks (Ⓕ), for the fantasy pages. #}
+{% macro fpnl(v, bold=False) %}{% if v is not none %}<{{ 'b' if bold else 'span' }} class="{{ pnl_cls(v) }}">{{ v|fbucks(true) }}</{{ 'b' if bold else 'span' }}>{% endif %}{% endmacro %}
 {% macro bar(fair, mid=None, cls="", kalshi_mid=None) -%}
 {%- set fair = fair if fair == fair else none %}{% set mid = mid if mid == mid else none %}{% set kalshi_mid = kalshi_mid if kalshi_mid == kalshi_mid else none %}
 <div class="bar {{ cls }}" title="our fair {{ '%.1f%%'|format(fair * 100) if fair is not none }}{% if mid is not none %} · Polymarket {{ '%.1f%%'|format(mid * 100) }}{% endif %}{% if kalshi_mid is not none %} · Kalshi {{ '%.1f%%'|format(kalshi_mid * 100) }}{% endif %}">{% if fair is not none %}<div class="f" style="width:{{ [fair * 100, 100]|min }}%"></div>{% endif %}{% if mid is not none %}<div class="m" data-venue="polymarket" style="left:calc({{ [mid * 100, 100]|min }}% - 1px)"></div>{% endif %}{% if kalshi_mid is not none %}<div class="m" data-venue="kalshi" style="left:calc({{ [kalshi_mid * 100, 100]|min }}% - 1px); display:none;"></div>{% endif %}</div>

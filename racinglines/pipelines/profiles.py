@@ -109,6 +109,14 @@ ALPHA_STYLES = {
                blurb="Buys on an 8-point edge instead of 10, so it trades a lot more."),
 }
 ALPHA_ORDER = ("T1", "T2", "T8", "T6", "T5")
+
+
+def followable():
+    """The styles players may pick and the pre-race draw may assign (fantasy/follow.auto_assign), in ALPHA_ORDER: a
+    style's `follow` flag, unset = available, so today's five stay as they are (owner handoff 2026-10-25, item 3:
+    "a per-strategy flag for 'available to follow' ... random default assignment draws only from available
+    strategies"). Setting follow=False never touches a player already following it."""
+    return tuple(c for c in ALPHA_ORDER if ALPHA_STYLES[c].get("follow", True))
 # Blends (combos): `members` [(code, weight)] instead of one strategy. Each member runs as itself with its stakes
 # scaled by its weight (signals.compute_all); its signals carry detail.member. A blend is not a Lab candidate.
 COMBOS = {

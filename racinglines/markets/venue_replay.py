@@ -39,6 +39,13 @@ from racinglines.markets import crowd as C
 STALE = timedelta(hours=6)           # a price older than this is no price
 
 
+# How old our latest recorded book may be for the live walk (book_at). The recorder polls every open Polymarket book
+# every 5 minutes, but a snapshot's ts is Polymarket's `timestamp`, when the book last changed, so a quiet book (a
+# head-to-head) keeps an hours-old snapshot that is still its book: at Austin's pre-race stage the h2h books' latest
+# snapshots were about 3 h old (26 Oct check). Older than this, the recorder has likely stopped: no fill.
+BOOK_AGE = timedelta(hours=6)
+
+
 class Polymarket:
     """Recorded Polymarket data for one weekend: 5-minute prices per token, the trade tape for liquidity,
     and the multi-outcome coherence check (a group whose prices don't sum near its target isn't traded)."""
@@ -95,18 +102,41 @@ class Polymarket:
         ps = [p for p in ps if p is not None]
         return bool(ps) and abs(sum(ps) - target) <= tol * target
 
-    def load_books(self, conn, start, end):
+    def load_books(self, conn, start, end, times=None):
         """Recorded order-book snapshots of the links' YES tokens over [start, end] (markets record writes them;
-        none stored = no thin-market exceptions, which is the safe side)."""
+        none stored = no thin-market exceptions, which is the safe side). times: read only the BOOK_AGE up to
+        each of these (the stages' price times, for book_at), not the whole weekend."""
         from racinglines.markets import store as MS
         from racinglines.markets.strategies.maker_replay import _levels
         root = None if self.code == "polymarket" else MS.root_for(self.code)
-        a, b = pd.Timestamp(start).tz_localize("UTC"), pd.Timestamp(end).tz_localize("UTC")
-        bk = MS.read(conn, "books", tokens=self.links["token_id"].tolist(), start=a, end=b, root=root)
+        toks = self.links["token_id"].tolist()
+        spans = ([(pd.Timestamp(t) - BOOK_AGE, pd.Timestamp(t)) for t in sorted(set(times))] if times
+                 else [(pd.Timestamp(start), pd.Timestamp(end))])
+        bk = pd.concat([MS.read(conn, "books", tokens=toks, start=a.tz_localize("UTC"), end=b.tz_localize("UTC"),
+                                root=root) for a, b in spans], ignore_index=True)
+        if times and len(bk):                       # overlapping windows: each snapshot once, in time order
+            bk = bk.drop_duplicates(["token_id", "ts"]).sort_values(["token_id", "ts"])
         self.books = {}
         for tok, g in bk.groupby("token_id"):
             ts = pd.DatetimeIndex(pd.to_datetime(g["ts"], utc=True)).tz_localize(None)
             self.books[tok] = (ts, [_levels(v) for v in g["bids"]], [_levels(v) for v in g["asks"]])
+
+    def book_at(self, token, t, max_age=None):
+        """The token's whole recorded YES book as of t (naive UTC), from load_books: dict(ts, bids, asks), each a list
+        of (price, size) best first, or None when there is no snapshot within max_age (default BOOK_AGE;
+        Probalytics' book_at shape). The live pass walks it (taker_fill = book): every later pass reads the same
+        snapshot, so fills stay put."""
+        max_age = BOOK_AGE if max_age is None else max_age
+        b = (self.books or {}).get(token)
+        if b is None:
+            return None
+        ts, bids, asks = b
+        i = ts.searchsorted(pd.Timestamp(t), side="right") - 1
+        if i < 0 or pd.Timestamp(t) - ts[i] > max_age:
+            return None
+        return dict(ts=ts[i].to_pydatetime(), bids=sorted(((float(p), float(q)) for p, q in bids[i].items() if q > 0),
+                                                         reverse=True),
+                    asks=sorted((float(p), float(q)) for p, q in asks[i].items() if q > 0))
 
     def touch_depth(self, token, t, max_age=timedelta(minutes=10)):
         """(shares resting at the best ask, at the best bid) of the token's latest book snapshot at or before t;

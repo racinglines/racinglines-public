@@ -35,9 +35,9 @@ def _mine(df):
     return dict(open=len(p), worst=sum(x["worst"] for x in p), staked=sum(x["staked"] for x in p))
 
 
-def _card(conn, race_id, maker_id, show_kind="race_win"):
-    info, pricing, df = event_matrix(conn, race_id, maker_id)
-    return dict(info=info, pricing=pricing, top=_top(df, show_kind), venues=venue_summary(df), mine=_mine(df),
+def _card(conn, race_id, maker_id, show_kind="race_win", hide_venues=()):
+    info, pricing, df = event_matrix(conn, race_id, maker_id, hide_venues)
+    return dict(info=info, pricing=pricing, top=_top(df, show_kind), venues=venue_summary(df, *([hide_venues] if hide_venues else [])), mine=_mine(df),
                 countdown=_countdown(info["start_date"]), outcomes=len(df))
 
 
@@ -127,7 +127,7 @@ def next_races(conn, competition_id, n=8):
         ORDER BY e.start_date, ra.id LIMIT :n""", c=competition_id, n=n)
 
 
-def board(conn, maker_id, only=None, detail=True, hide=frozenset()):
+def board(conn, maker_id, only=None, detail=True, hide=frozenset(), hide_venues=frozenset()):
     """One dict per sport shown on the Markets board. detail=False: only what a sport's collapsed header shows (name,
     model run, status chips); the page loads each sport's body when it is opened (`only` = that competition code)."""
     from racinglines import exchanges as EX
@@ -157,7 +157,7 @@ def board(conn, maker_id, only=None, detail=True, hide=frozenset()):
     if detail:
         comps = {s["competition"]["code"]: s for s in map(SP.load, SP.SPORT_CODES)
                  if s["competition"]["code"] == only} if only is not None else None
-        for b in exchange_breakdown(conn, comps):
+        for b in exchange_breakdown(conn, comps, *([hide_venues] if hide_venues else [])):
             exch_by_comp.setdefault(b["competition"], []).append(b)
     elif conn is not None:
         links = data.q(conn, """SELECT DISTINCT co.code AS competition
@@ -187,12 +187,12 @@ def board(conn, maker_id, only=None, detail=True, hide=frozenset()):
             targets = data.run_race_targets(conn, run["id"])
             targets = targets[targets["race_id"].notna() & ~targets["target"].astype(str).str.startswith("backtest:")]
             upcoming = _with_resolved(conn, comp_id, maker_id,
-                                      [dict(_card(conn, int(r), maker_id), new=_new_for(int(r))) for r in targets["race_id"].head(3)])
+                                      [dict(_card(conn, int(r), maker_id, **({'hide_venues': hide_venues} if hide_venues else {})), new=_new_for(int(r))) for r in targets["race_id"].head(3)])
             later = [dict(title=race_title(code, t["source_key"], t["venue"], t["event_name"]), event_id=t["event_id"],
                           race_id=int(t["race_id"]), date=t["start_date"], new=_new_for(int(t["race_id"]))) for t in targets.iloc[3:].to_dict("records")]
-            s_info, s_pricing, s_df = season_matrix(conn, code, maker_id)
+            s_info, s_pricing, s_df = season_matrix(conn, code, maker_id, *([hide_venues] if hide_venues else []))
             from racinglines.web.views import latest_season_strategy
-            season = dict(new=_new_for(None, comp_id), info=s_info, top=_top(s_df, "champion"), venues=venue_summary(s_df), mine=_mine(s_df),
+            season = dict(new=_new_for(None, comp_id), info=s_info, top=_top(s_df, "champion"), venues=venue_summary(s_df, *([hide_venues] if hide_venues else [])), mine=_mine(s_df),
                           outcomes=len(s_df), constructors=_top(s_df, "constructors_champion", 2),
                           strategy=latest_season_strategy(conn, code))
             recent = True                                # loaded when its section is opened (views.board_recent)
@@ -203,7 +203,7 @@ def board(conn, maker_id, only=None, detail=True, hide=frozenset()):
             comp_id = int(data.q(conn, "SELECT id FROM competitions WHERE code = :c", c=code)["id"].iloc[0])
             nxt = next_races(conn, comp_id)
             upcoming = _with_resolved(conn, comp_id, maker_id,
-                                      [dict(_card(conn, int(r), maker_id), new=_new_for(int(r))) for r in nxt["race_id"].head(3)])
+                                      [dict(_card(conn, int(r), maker_id, **({'hide_venues': hide_venues} if hide_venues else {})), new=_new_for(int(r))) for r in nxt["race_id"].head(3)])
             later = [dict(title=t["name"], event_id=t["event_id"], race_id=int(t["race_id"]), date=t["start_date"],
                           new=_new_for(int(t["race_id"]))) for t in nxt.iloc[3:].to_dict("records")]
             recent = True                                # loaded when its section is opened (views.board_recent)

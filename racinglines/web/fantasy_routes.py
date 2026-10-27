@@ -8,7 +8,7 @@ hand ("first-cut manual trading") next to following a strategy, and the leaderbo
     POST /fantasy/orders   one IOC paper order (fantasy/exchange.place), then back to the market with the result;
                            with preview=1 nothing is placed: back to the form, requoted with its values
     /history               the alpha's History tab: your F$, every trade (by hand, open and settled, and by your
-                           strategy), F$ through the run, and the leaderboard (ROI x sqrt(trades), fantasy/ledger.ranked)
+                           strategy), F$ through the run, and the leaderboard (ROI x (trades / 10)^0.3, fantasy/ledger.ranked)
     /fantasy, /fantasy/trade, /leaderboard   the first cut's addresses, redirected to the two above
 
 All of it is off unless fantasy/ledger.on() (RACINGLINES_FANTASY=1, or staging with the switch unset): 404 otherwise.
@@ -99,7 +99,7 @@ def history_page(request: Request, msg: str = ""):
         profile = PF.of_user(c, me["id"])
         board = FL.ranked(c, hide=(*HIDDEN, *demo.DEMO_USERS), quotes=FX.quotes(_books(), FL.open_tokens(c)))
     mine = next((r for r in board if r["username"] == me["username"]), None)
-    chart = (line_chart({"hand": curve}, labels={"hand": "F$ by hand"}, include_zero=False,
+    chart = (line_chart({"hand": curve}, labels={"hand": "Ⓕ by hand"}, include_zero=False,
                         markers=[(curve[-1][0], "now")]) if len(curve) >= 2 else None)   # the last point is at mark
     return render(request, "history.html", ready=True, s=s, positions=pos, settled=settled, orders=recent, strat=strat, chart=chart,
                   profile=profile, mine=mine, rows=board, min_trades=FL.MIN_TRADES, msg=msg,
@@ -198,9 +198,11 @@ def fantasy_order(request: Request, market_link_id: str = Form(""), side: str = 
             got = sum(s for _, s in r["fills"])
             avg = sum(p * s for p, s in r["fills"]) / got
             msg = (f"{'Bought' if action == 'buy' else 'Sold'} {got:g} {side.upper()} at an average of {avg:.2f}"
-                   + (f", fee F${r['fee']:.2f}" if r["fee"] else "")
+                   + (f", fee Ⓕ{r['fee']:.2f}" if r["fee"] else "")
                    + (" (part of your order: the rest wasn't on the book at your limit)" if r["status"] == "partial" else "")
-                   + (" (already placed)" if r.get("repeat") else "") + ".")
+                   + (" (already placed)" if r.get("repeat") else "") + "."
+                   + (f" Checked against {FX.VENUE_NAME.get(r.get('exchange'), r.get('exchange'))}'s live book."
+                      if r.get("book_source") == "live" else ""))
     sep = "&" if "?" in back else "?"
     return RedirectResponse(f"{back}{sep}msg={quote(msg)}", status_code=303)
 

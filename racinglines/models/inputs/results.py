@@ -16,6 +16,7 @@ A sport's schema sets its inputs and hooks, and nothing here names a sport:
     prior = "uci_points"            # results.extra key: a pre-race rating of the entrant (rating prior)
     sessions = ["qual"]             # input "qualifying": other classifications of the weekend, by rounds.kind
     best_lap = "race_fastest_lap"   # input "fastest_lap": an indicator kind drawn from each race's best-lap order
+    history = "category"            # each category its own history: a race is priced from its category's races only
     [model.defaults]                # per-sport defaults for the Settings below (decision-log entries)
     noise = 0.7
 
@@ -95,6 +96,30 @@ SIDE_SEED = 7_401          # salt of the side classifications' generator (sessio
 CALIB_SEED = 7_501         # salt of the calibration resample's generator
 DNF_PRIOR_N = 5.0          # pseudo-starts shrinking an entrant's DNF rate toward the field's
 REQUIRED = ("season", "race", "date", "athlete_id", "position", "status")
+CATEGORY = "category"      # the results frame's categories.code column, read when [model] history = "category"
+
+
+class ByCategory(dict):
+    """{category code: history}: a model's history split by category ([model] history = "category"); price() reads
+    the one of the event's category (Event.info["category"])."""
+
+
+def by_category(model, data):
+    """Whether `model` keeps a history per category for `data` (the schema asked and the frame carries the codes)."""
+    return (model.cfg or {}).get("history") == CATEGORY and CATEGORY in data
+
+
+def split_history(model, data, settings):
+    """ByCategory of model.history on each category's rows (the column dropped, so each is an ordinary history)."""
+    return ByCategory({str(c): model.history(g.drop(columns=CATEGORY), settings)
+                       for c, g in data.groupby(CATEGORY, sort=False)})
+
+
+def event_history(hist, ev):
+    """The history `ev` is priced from: hist itself, or with a ByCategory the event's category's (None: none yet)."""
+    if not isinstance(hist, ByCategory):
+        return hist
+    return hist.get(str((ev.info or {}).get(CATEGORY)))
 _N = NormalDist()
 
 
@@ -175,6 +200,13 @@ def _strengths(d):
     return d, np.where(fin, -_probit(q), np.nan), fin
 
 
+def dnf_rate(w, fin, Wall, Wf):
+    """Each entrant's retirement chance: their decayed non-finishes over decayed starts (Wall - Wf over Wall), shrunk
+    toward the field's decayed rate by DNF_PRIOR_N pseudo-starts. w, fin: the history rows' weights and finished flags."""
+    rbar = float(w[~fin].sum() / w.sum())
+    return (Wall - Wf + DNF_PRIOR_N * rbar) / (Wall + DNF_PRIOR_N)
+
+
 def _groups(hist, n, j, inf, field, ev):
     """Per entrant of `field`: its team (the group the team markets name), from the event's entry list
     (`ev.info["groups"]`) or else the entrant's latest team in the history before the event; an entrant with neither
@@ -222,6 +254,10 @@ class ResultsCore:
                 raise ValueError(f"sports/{sport}.toml: [model] {hook} is set but [model] inputs doesn't declare {need!r}")
         cfg = dict(competition=schema["competition"]["code"], source=source, group=m.get("group"), prior=m.get("prior"))
         cfg.update({k: v for k, v in dict(sessions=sessions, best_lap=best_lap).items() if v})   # only when named
+        if m.get("history") not in (None, CATEGORY):
+            raise ValueError(f"sports/{sport}.toml: [model] history is {CATEGORY!r} or unset, not {m['history']!r}")
+        if m.get("history"):                 # a history per category: races keyed by event and category
+            cfg.update(history=CATEGORY, race_key="category")
         S = _settings_class(defaults)        # CALIB_SPORT: whose calibration table a walk_forward model key hashes
         return dict(cfg=cfg, Settings=type(S.__name__, (S,), dict(CALIB_SPORT=sport)))
 
@@ -252,16 +288,37 @@ class ResultsCore:
         if prior:
             params["pk"] = prior
         with get_engine(engine_url).connect() as conn:
-            df = pd.read_sql(text(f"""
-                SELECT s.year AS season, ev.id AS race, ev.name, ev.start_date::date AS date, r.athlete_id,
-                       r.position, r.status, {gsel}, {psel}
-                FROM results r JOIN rounds ro ON ro.id = r.round_id AND ro.kind = 'race'
-                JOIN races ra ON ra.id = ro.race_id JOIN events ev ON ev.id = ra.event_id
-                JOIN seasons s ON s.id = ev.season_id JOIN competitions co ON co.id = s.competition_id
-                WHERE co.code = :c AND ev.source = :src AND r.athlete_id IS NOT NULL
-                ORDER BY ev.start_date, ev.id, r.position NULLS LAST"""), conn, params=params)
+            df = pd.read_sql(text(self._kind_sql(f", {gsel}, {psel}")), conn,
+                             params=dict(params, k=self.cfg.get("kind", "race")))
             self.sides = self._load_sides(conn, params)
         return _frame(df)
+
+    def _kind_sql(self, cols=""):
+        """The results of one round kind (:k) of the competition (:c) and events.source (:src), one row per entrant
+        per race. Optional hooks (cfg, set by a model that needs them; unset gives the engine's query): race_key
+        "category" keys a race by event and category (events.source_key + "_" + categories.code, a sport with several
+        categories per event), times adds results.time_ms, source None reads every source of the competition."""
+        cfg = self.cfg or {}
+        by_cat = cfg.get("race_key") == "category" or cfg.get("history") == CATEGORY
+        key = ("ev.source_key || '_' || ca.code AS race, ev.name || ' ' || ca.code AS name" if by_cat
+               else "ev.id AS race, ev.name")
+        if cfg.get("history") == CATEGORY:   # history "category": the code, so history() can split by it
+            key += ", ca.code AS category"
+        cols = (", r.time_ms" if cfg.get("times") else "") + cols
+        return f"""
+                SELECT s.year AS season, {key}, ev.start_date::date AS date, r.athlete_id,
+                       r.position, r.status{cols}
+                FROM results r JOIN rounds ro ON ro.id = r.round_id AND ro.kind = :k
+                JOIN races ra ON ra.id = ro.race_id JOIN events ev ON ev.id = ra.event_id
+                {"JOIN categories ca ON ca.id = ra.category_id " if by_cat else ""}JOIN seasons s ON s.id = ev.season_id
+                JOIN competitions co ON co.id = s.competition_id
+                WHERE co.code = :c {"AND ev.source = :src " if cfg.get("source") else ""}AND r.athlete_id IS NOT NULL
+                ORDER BY ev.start_date, {"race" if by_cat else "ev.id"}, r.position NULLS LAST"""
+
+    def _load_kind(self, conn, params, kind):
+        """One round kind's results as a frame in the race frame's shape."""
+        from sqlalchemy import text
+        return _frame(pd.read_sql(text(self._kind_sql()), conn, params=dict(params, k=kind)))
 
     def _load_sides(self, conn, params):
         """{name: frame}: each [model] sessions round kind's results, and the [model] best_lap order (best_lap_order
@@ -269,15 +326,7 @@ class ResultsCore:
         from sqlalchemy import text
         out = {}
         for kind in (self.cfg or {}).get("sessions") or []:
-            df = pd.read_sql(text("""
-                SELECT s.year AS season, ev.id AS race, ev.name, ev.start_date::date AS date, r.athlete_id,
-                       r.position, r.status
-                FROM results r JOIN rounds ro ON ro.id = r.round_id AND ro.kind = :k
-                JOIN races ra ON ra.id = ro.race_id JOIN events ev ON ev.id = ra.event_id
-                JOIN seasons s ON s.id = ev.season_id JOIN competitions co ON co.id = s.competition_id
-                WHERE co.code = :c AND ev.source = :src AND r.athlete_id IS NOT NULL
-                ORDER BY ev.start_date, ev.id, r.position NULLS LAST"""), conn, params=dict(params, k=kind))
-            out[kind] = _frame(df)
+            out[kind] = self._load_kind(conn, params, kind)
         kind = (self.cfg or {}).get("best_lap")
         if kind:
             df = pd.read_sql(text("""
@@ -312,6 +361,8 @@ class ResultsCore:
                 continue
             name = str(g["name"].iloc[0]) if "name" in g and pd.notna(g["name"].iloc[0]) else str(race)
             info = {"field": sorted(started["athlete_id"].unique().tolist())}
+            if CATEGORY in g and pd.notna(g[CATEGORY].iloc[0]):          # history "category": the history it reads
+                info[CATEGORY] = str(g[CATEGORY].iloc[0])
             if "team" in started and started["team"].notna().any():      # the entry list's teams (group markets)
                 t = started.dropna(subset=["team"]).drop_duplicates("athlete_id", keep="last")
                 info["groups"] = {int(a): str(x) for a, x in zip(t["athlete_id"], t["team"])}
@@ -319,6 +370,8 @@ class ResultsCore:
         return sorted(out, key=lambda e: (e.cutoff, str(e.id)))
 
     def history(self, data, settings):
+        if by_category(self, data):
+            return split_history(self, data, settings)
         d, z, fin = _strengths(data[data["race"].isin(self._complete_races(data))])
         return SimpleNamespace(
             t=(d["date"].to_numpy("datetime64[D]").astype(np.int64)), a=d["athlete_id"].to_numpy(), z=z, fin=fin,
@@ -341,6 +394,9 @@ class ResultsCore:
     # --- pricing ------------------------------------------------------------------------------------
     def price(self, hist, ev, settings, rng):
         """OutcomeSims from finishes on days before ev.cutoff; None when there are none."""
+        hist = event_history(hist, ev)
+        if hist is None:
+            return None
         cut = _day(ev.cutoff)
         n = int(np.searchsorted(hist.t, cut, side="left"))
         if n == 0:
@@ -384,9 +440,7 @@ class ResultsCore:
         sd = np.sqrt(settings["noise"] ** 2 + settings["uncertainty"] ** 2 / (Wf + 1.0))
         perf = mu + sd * rng.standard_normal((settings["sims"], k))
         if settings["dnf"]:
-            rbar = float(w[~fin].sum() / w.sum())
-            p_dnf = (Wall - Wf + DNF_PRIOR_N * rbar) / (Wall + DNF_PRIOR_N)
-            dnf = rng.random((settings["sims"], k)) < p_dnf
+            dnf = rng.random((settings["sims"], k)) < dnf_rate(w, fin, Wall, Wf)
         else:
             dnf = np.zeros((settings["sims"], k), bool)
         rank = np.argsort(np.argsort(-(perf - 1e3 * dnf), axis=1), axis=1) + 1

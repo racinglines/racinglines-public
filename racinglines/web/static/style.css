@@ -423,7 +423,14 @@ dialog.site-notice::backdrop { background: rgba(0, 0, 0, .35); }
 dialog.site-notice p { margin: 0 0 12px; } dialog.site-notice form { margin: 0; } dialog.site-notice button { min-width: 72px; }
 .signup-cta { text-align: center; margin: 12px 0 0; font-size: 14px; }
 .topbar .right a.signup-link { color: var(--accent); font-weight: 600; }
-dialog.email-notice input[type=email] { width: 100%; box-sizing: border-box; } dialog.email-notice .muted { font-size: 12px; margin: 0; }
+dialog.follow-notice { max-width: 460px; text-align: left; } dialog.follow-notice .muted { font-size: 12px; margin: 0; }
+.follow-styles { display: grid; gap: 6px; margin: 0 0 12px; }
+.follow-style { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+.follow-style .muted { display: block; margin: 2px 0 0; }
+.follow-style:has(input:checked) { border-color: var(--line-strong); background: var(--bg); }
+.follow-venues { border: 0; padding: 0; margin: 0 0 12px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.follow-venues legend { font-weight: 600; padding: 0; margin-bottom: 4px; }
+.follow-venues .legend { flex-basis: 100%; }
 .signup-form .check { display: flex; gap: 8px; align-items: baseline; font-size: 13px; } .signup-form .check input { width: auto; }
 .signup-form .hint { color: var(--muted); font-size: 12px; margin: 2px 0 6px; }
 .onetime { font-family: ui-monospace, monospace; font-size: 15px; padding: 6px 10px; background: var(--bg); border-radius: 6px; user-select: all; }

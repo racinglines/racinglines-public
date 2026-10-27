@@ -328,6 +328,61 @@ def admin_monitors(request: Request, c=Depends(conn)):
     return render(request, "admin_monitors.html", monitors=out, prefix=prefix)
 
 
+def _lock_rows(now=None):
+    """The F1 weekends still to come (or under way) this season with their pick lock: the default times, the admin's
+    override (fantasy/follow.lock_overrides) and whether picks are locked now. -> [dict]."""
+    import pandas as pd
+
+    from racinglines.fantasy import follow as FW
+    now = pd.Timestamp(now) if now is not None else pd.Timestamp.now(tz="UTC").tz_localize(None)
+    over, live = FW.lock_overrides(), FW.open_weekend(now)
+    out = []
+    for rnd, w in sorted(FW._schedule(now.year).items()):
+        if FW.default_reopens(w) <= now:
+            continue
+        o = over.get(w["event_key"], {})
+        out.append(dict(round=rnd, event_key=w["event_key"], name=w["name"], race_start=w["race_start"],
+                        first=min((t for _, t in w.get("sessions") or ()), default=w["race_start"]),
+                        closes=FW.cutoff(w), reopens=FW.reopens(w), default_reopens=FW.default_reopens(w),
+                        override=bool(o), off=bool(o.get("off")),
+                        locked=live is not None and live["event_key"] == w["event_key"]))
+    return out
+
+
+@app.get("/admin/locks", response_class=HTMLResponse, dependencies=ADMIN)
+def admin_locks(request: Request, msg: str = ""):
+    """Strategy-pick locks (owner, 2026-10-21: "UI for the admin to override/ edit upcoming locks"): each coming F1
+    weekend's lock, by default from lights out to a day after the race (fantasy/follow.open_weekend), with a form to
+    move either time or turn the lock off for that weekend. Saved in the data folder (follow.locks_file)."""
+    try:
+        weekends = _lock_rows()
+    except Exception as ex:                             # noqa: BLE001  no schedule: say so instead of a 500
+        weekends, msg = [], msg or f"Error: no F1 schedule ({ex})"
+    return render(request, "admin_locks.html", weekends=weekends, msg=msg)
+
+
+@app.post("/admin/locks", dependencies=[Depends(check_csrf), allow("admin")])
+def admin_locks_save(request: Request, event_key: str = Form(...), closes: str = Form(""), reopens: str = Form(""),
+                     off: str = Form(""), reset: str = Form("")):
+    """Save one weekend's override (times are UTC, from datetime-local inputs), or clear it with `reset`."""
+    import pandas as pd
+
+    from racinglines.fantasy import follow as FW
+    if event_key not in {w["event_key"] for w in _lock_rows()}:
+        raise HTTPException(400, "not a coming weekend")
+    if reset:
+        closes = reopens = off = ""
+    try:
+        if closes and reopens and pd.Timestamp(closes) >= pd.Timestamp(reopens):
+            return RedirectResponse("/admin/locks?msg=Error: the lock must close before it reopens.", status_code=303)
+        FW.save_lock_override(event_key, closes or None, reopens or None, off == "1")
+    except ValueError:
+        return RedirectResponse("/admin/locks?msg=Error: not a date and time.", status_code=303)
+    audit(request, "pick_lock", event_key=event_key, closes=closes or None, reopens=reopens or None, off=off == "1",
+          reset=bool(reset))
+    return RedirectResponse("/admin/locks?msg=" + quote(f"Saved {event_key}."), status_code=303)
+
+
 @app.get("/admin/storage", dependencies=ADMIN)
 def admin_storage():
     return RedirectResponse("/admin/db#storage", status_code=303)       # the storage status lives on /admin/db (owner)

@@ -50,7 +50,7 @@ def _grid(sport):
                 at=pd.Timestamp(md.stat().st_mtime, unit="s", tz="UTC") if md.is_file() else None)
 
 
-def status(conn, hide=frozenset()):
+def status(conn, hide=frozenset(), hide_venues=frozenset()):
     """One dict per sport (schema display order): name, competition, modeled, and a cell per column, each
     dict(state=ok|partial|none|na, text=..., sub=...)."""
     races = data.q(conn, """
@@ -126,7 +126,7 @@ def status(conn, hide=frozenset()):
             row["races"] = dict(state="ok" if res else "partial", short=f"{res:,}/{n:,}",
                                 text=f"{res:,} of {n:,} races with results · {span}", sub=" · ".join(sub))
 
-        lk = links[links["competition"] == comp]
+        lk = links[(links["competition"] == comp) & ~links["exchange"].isin(hide_venues)]
         if not len(lk):
             row["markets"] = dict(state="none", text="no exchange markets linked", short="0", sub="", exchanges=[])
         else:

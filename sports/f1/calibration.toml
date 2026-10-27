@@ -13,7 +13,9 @@
 #   races   races in the fit
 # Source: scripts/models/fit_calibration.py --sims 4000 --check, on the as-of stage prices of the default model
 # (gridq+pretrain+reset, calib_power unset) from `racinglines strategy sweep f1 --year 2025|2026 --sims 4000`, 39 Grands Prix
-# 2025-01 to 2026-15 (the cloud data bucket's database, built 2026-10-14). Refit on the VM after each race to add rows.
+# 2025-01 to 2026-15 (the cloud data bucket's database, built 2026-10-14). Rows for 2026-16 and 2026-17 (41 races) added
+# 2026-10-21 from the prod database's default-model stage runs (model key 1c505c191fa3; the 39 earlier rows refit
+# identically, leak check passed). Refit on the VM after each race to add rows.
 # A cutoff before the first `from` gets no calibration (a = 1): fewer than 8 races to fit on.
 # Rebuild: docs/f1-calibration.md.
 
@@ -239,3 +241,17 @@ from = 2026-09-28
 grid = 2.3
 nogrid = 2.1
 races = 39
+next_event = "2026-16"
+
+[[fit]]
+from = 2026-10-06
+grid = 2.3
+nogrid = 2.1
+races = 40
+next_event = "2026-17"
+
+[[fit]]
+from = 2026-10-13
+grid = 2.4
+nogrid = 2.1
+races = 41

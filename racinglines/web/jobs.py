@@ -41,6 +41,7 @@ class Knob:
     name: str
     label: str
     type: str = "float"          # float | int | choice | text | datetime | event | years | legs (combo legs, JSON) | calib
+                                 # | stage (a [stages] label of the job's sport) | model_settings (the chosen model's)
     default: object = None
     min: float | None = None
     max: float | None = None
@@ -91,7 +92,10 @@ def venue_name(code):
 def sport_venues(code):
     """The exchanges that list a sport: its schema's [markets] venues and every exchange schema naming it."""
     listed = [v for v in sports.load(code).get("markets", {}).get("venues", []) if v != "private"]
-    return listed + [x for x in exchanges.CODES if code in exchanges.sports(x) and x not in listed]
+    # an admin-only exchange ([exchange] audience) is quotes on show, not a venue to replay or paper-trade on: it stays
+    # out of the Lab's columns and a user's strategy slots, which every signed-in user sees
+    admin = exchanges.admin_only()
+    return listed + [x for x in exchanges.CODES if code in exchanges.sports(x) and x not in listed and x not in admin]
 
 
 # model variants offered for the sweep: each switch alone, and the combinations worth comparing
@@ -140,11 +144,68 @@ def _sport_sweep_argv(sport):
     return argv
 
 
+def walk_forward_models():
+    """The walk-forward job's model choices: "own" (the sport's pricing model), "global" (the engine at the results
+    level) and every modelled sport's [sport] challengers; a challenger runs only for a sport that
+    names it (_walk_forward_argv checks)."""
+    from racinglines.models import race_model as RM
+    names = sorted({n for code in modeled_sports() for n in RM.challengers(code)})
+    return ["own", "global", *names]
+
+
+def _walk_forward_model(sport, model):
+    """The walk-forward job's model for `sport` (backtest walk-forward's pricing_model): own, global or a challenger
+    the sport's schema names."""
+    if model not in ("own", "global"):
+        from racinglines.models import race_model as RM
+        if model not in RM.challengers(sport):
+            raise ValueError(f"model {model!r} is not a challenger of {sport} (sports/{sport}.toml [sport] "
+                             f"challengers: {sorted(RM.challengers(sport))})")
+    from racinglines.cli import backtest as BT
+    return BT.pricing_model(sport, None if model == "own" else model)
+
+
+def walk_forward_settings(sport, model, settings):
+    """The walk-forward job's model settings, validated against the chosen model's Settings schema (its CLI flags):
+    {name: value} of the ones that differ from its defaults. `settings`: a dict, or text (a JSON object, or
+    name=value pairs separated by ';', e.g. "covariates=grid,qual_gap; temperature=fit")."""
+    import json
+    from racinglines.cli import backtest as BT
+    if isinstance(settings, str):
+        raw = settings.strip()
+        if raw.startswith("{"):
+            try:
+                settings = json.loads(raw)
+            except json.JSONDecodeError as ex:
+                raise ValueError(f"Model settings: not a JSON object ({ex.msg})") from None
+        else:
+            settings = {}
+            for item in raw.split(";"):
+                if item.strip():
+                    k, eq, v = item.partition("=")
+                    if not eq:
+                        raise ValueError(f"Model settings: {item.strip()!r} is not name=value")
+                    settings[k.strip()] = v.strip()
+    if not isinstance(settings, dict):
+        raise ValueError("Model settings: a JSON object or name=value pairs")
+    own = [k for k in settings if k in (*BT.WF_OWN_FLAGS, "variant")]
+    if own:
+        raise ValueError(f"Model settings: {own} are not walk-forward model settings")
+    cls = _walk_forward_model(sport, model).Settings
+    st = cls.from_dict(settings)
+    return {k: (list(v) if isinstance(v, tuple) else v) for k, v in st.changed().items()}
+
+
 def _walk_forward_argv(p, out):
+    model = p["model"]
+    m = _walk_forward_model(p["sport"], model)
+    st = m.Settings.from_dict(p.get("settings") or {})
     return (["-m", "racinglines", "backtest", "walk-forward", p["sport"], "--save", "--out-dir", str(Path(out).with_suffix(""))]
-            + (["--model", "global"] if p["model"] == "global" else [])
+            + (["--model", model] if model != "own" else [])
             + (["--seasons", *p["seasons"].split()] if p["seasons"] else [])
-            + (["--venue", p["venue"]] if p["venue"] != "none" else []))
+            + (["--venue", p["venue"]] if p["venue"] != "none" else [])
+            + (["--stage", p["stage"]] if p.get("stage") else [])
+            + st.argv())
 
 
 def live_variant():
@@ -212,9 +273,16 @@ CATALOG = {j.code: j for j in [
             [Knob("sport", "Sport", "choice", "f1", choices=modeled_sports()),
              Knob("venue", "Score against", "choice", "none", choices=["none", *MVM.VENUES],
                   help="An exchange's linked markets, priced at the same moment as the model."),
-             Knob("model", "Model", "choice", "own", choices=["own", "global"],
-                  help="own: the sport's pricing model; global: the sport-agnostic results model."),
-             Knob("seasons", "Seasons", "years", "", help="Blank: every season the model can score.")],
+             Knob("model", "Model", "choice", "own", choices=walk_forward_models(),
+                  help="own: the sport's pricing model; global: the sport-agnostic results model; any other: a "
+                       "challenger the sport's schema names ([sport] challengers)."),
+             Knob("seasons", "Seasons", "years", "", help="Blank: every season the model can score."),
+             Knob("stage", "Stage", "stage", "",
+                  help="Price every event at this stage of the sport's [stages] (e.g. after Quali; for the engine and "
+                       "any model that prices by stage). Blank: once per event, before the weekend."),
+             Knob("settings", "Model settings", "model_settings", None,
+                  help="The chosen model's settings (its CLI flags), name=value separated by ';', e.g. "
+                       "covariates=grid,qual_gap; temperature=fit; place_decay=4. Blank: its defaults.")],
             _walk_forward_argv, "a few minutes per season", venues=(None, *MVM.VENUES)),
     JobType("f1_backtest", "f1", "Backtest", "Price past races as of just before qualifying and just before the race, "
             "then score against results and the grid-only baseline.",
@@ -346,7 +414,26 @@ def parse(job_type, form):
             out[k.name] = {n: v for n, v in parse_sweep_settings(form, settings_cls).items()
                            if n not in own and (not k.choices or n in k.choices)}   # only the ones it takes
             continue
+        if k.type == "model_settings":                         # the chosen model's (knobs sport and model first)
+            v = form.get(k.name)
+            v = walk_forward_settings(out.get("sport", job_type.sport), out.get("model", "own"),
+                                      v if isinstance(v, dict) else (v or ""))
+            if v:                                               # omitted when empty: params as before
+                out[k.name] = v
+            continue
         raw = (form.get(k.name) or "").strip()
+        if k.type == "stage":                                   # a [stages] label of the job's sport; blank = none
+            if raw:
+                from racinglines.pipelines import season_sweep as SW
+                sport = out.get("sport", job_type.sport)
+                labels = SW.stage_labels(sport, "sessions")
+                if raw not in labels:
+                    raise ValueError(f"{k.label}: {sport}'s stages are {list(labels)}")
+                if not hasattr(_walk_forward_model(sport, out.get("model", "own")), "at_stage"):
+                    raise ValueError(f"{k.label}: the {out.get('model', 'own')} model prices each event once (no "
+                                     "at_stage); the engine and a stage-priced challenger take a stage")
+                out[k.name] = raw
+            continue
         if raw == "" and k.default is not None:
             raw = str(k.default)
         if k.type in ("float", "int"):

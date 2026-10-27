@@ -31,6 +31,7 @@ HOST_INTERVAL = {
     "motorsport.com": 1.0,
     "www.motorsport.com": 1.0,
     "en.wikipedia.org": 1.0,
+    "www.fis-ski.com": 2.0,          # FIS results database (HTML pages); probe only, docs/data.md
 }
 DEFAULT_INTERVAL = 0.25
 RETRY_STATUS = {429, 500, 502, 503, 504}

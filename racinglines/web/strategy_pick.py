@@ -21,6 +21,8 @@ Kelly at a fraction), and one closed "tweak" drawer with two sliders (edge neede
 and admin; any tweak is untested, scored live from the next race weekend. alpha_picker() is the one switch: with it off
 the page is the classic one above, unchanged.
 
+The alpha page and the follow popup (_site_notice.html, app.follow_prompt) also send the exchange checkboxes
+(`venues`, with `venues_form` set): Polymarket runs, Kalshi and ProphetX are opt-ins saved with follow.save_venues.
 Saving goes through fantasy/follow.follow (the MCP tool fantasy_follow's path too) and profiles.assign (F1 on Polymarket,
 the slot the signal engine runs). The demo accounts keep the
 profiles assign_demo gives them: they see the page but can't save. The dice (owner, 2026-10-11 22:20Z: "let the user input
@@ -158,7 +160,14 @@ def _alpha_page(request, me, profile, w, msg):
                   now=now, chosen=chosen, drawer=drawer, sizing=(profile or {}).get("sizing") or "standard", kelly=k,
                   kelly_cfg=KELLY, kelly_picks=KELLY_PICKS, kelly_labels=KELLY_LABELS, kelly_label=kelly_label(k),
                   locked=demo.is_demo(me) or bool(w), demo_locked=demo.is_demo(me),
-                  weekend_note=lock_note(w) if w else "", msg=msg, basic=R.is_basic(me))
+                  weekend_note=lock_note(w) if w else "", msg=msg, basic=R.is_basic(me), venues=_venues(me))
+
+
+def _venues(me):
+    """The exchange checkboxes: [dict(key, label, live, note, on)] with the account's opt-ins ticked."""
+    with get_engine().connect() as c:
+        on = FW.venues_of(c, me["id"])
+    return [dict(key=k, label=lab, live=live, note=note, on=k in on) for k, lab, live, note in FW.VENUES]
 
 
 def _alpha_form(form, user):
@@ -199,6 +208,8 @@ async def pick_save(request: Request, code: str = Form(""), rolled: str = Form("
             old = PF.of_user(c, me["id"])
             new = FW.follow(c, me, code, sizing=form.get("sizing"), kelly=form.get("kelly"), tweaks=tweaks,
                             rolled=rolled == "1", slot=slot, alpha=alpha, weekend=open_weekend())
+            if form.get("venues_form") and new is not None:   # the exchange checkboxes (popup and alpha page)
+                FW.save_venues(c, me["id"], form.getlist("venues"))
     except FW.FollowError as ex:
         return RedirectResponse("/strategy/pick?msg=" + ("" if ex.reason == "demo_account" else "Error: ") + ex.message,
                                 status_code=303)

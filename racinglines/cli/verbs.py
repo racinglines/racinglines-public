@@ -14,9 +14,10 @@ from racinglines.cli import present
 
 # the CLI module of each sport (sports/<code>.toml codes, plus the short name the commands have always used)
 # (those installed: the public release has f1 only, oss/manifest.toml)
-MODULES = tuple(m for m in ("f1", "mtb_dh", "nascar", "motogp", "cycling") if present(f"cli.{m}"))
+MODULES = tuple(m for m in ("f1", "mtb_dh", "nascar", "motogp", "cycling", "fis_alpine") if present(f"cli.{m}"))
 SPORTS = {k: m for k, m in {"f1": "f1", "mtb_dh": "mtb_dh", "nascar": "nascar", "motogp": "motogp",
-                            "road_cycling": "cycling", "cycling": "cycling"}.items() if m in MODULES}
+                            "road_cycling": "cycling", "cycling": "cycling",
+                            "fis_alpine": "fis_alpine"}.items() if m in MODULES}
 
 GROUPS = {
     "data": ("results, sessions, feeds and market links into the database", (

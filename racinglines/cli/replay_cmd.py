@@ -316,6 +316,8 @@ def add_sweep_parser(sub, sport):
     p.add_argument("--save", action="store_true", help="Store the sweep (model_runs kind 'sweep', params with sport "
                                                        "and venue).")
     p.add_argument("--reliability", action="store_true", help="Also print and save the calibration tables.")
+    p.add_argument("--trades-out", default=None, metavar="DIR",
+                   help="Also write every trade (touch bid / ask / sizes, outcome) to DIR/trades.parquet.")
     SS.add_arguments(p.add_argument_group(f"settings (sports/{sport}.toml [sweep]; default = baseline)"),
                      S.settings_class(sport))
     return p
@@ -329,6 +331,9 @@ def run_sweep(args, sport):
     rounds = _numbers(args.rounds) if args.rounds else None
     out = S.run(get_engine(args.db), args.db, sport, args.year, rounds, settings=st,
                 echo=lambda m: print(m, flush=True))
+    if getattr(args, "trades_out", None):
+        from racinglines.pipelines import weekend_sweep as SW
+        print(f"Trades -> {SW.write_trades(out, args.trades_out)}", flush=True)
     w = out["weekends"]
     cols = [c for c in ["event_key", "event", "stages", "markets", "tradeable_pre", "tradeable_quali", "update_trades",
                         "update_bought", "update_pnl", "hold_pnl", "last_pnl", "early_pnl", "maker_fills", "maker_pnl"]

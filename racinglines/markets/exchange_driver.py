@@ -13,6 +13,12 @@ the schema. Read-only by construction: the driver only issues GETs of public mar
     fetch_trades / fetch_history / snapshot_books                      the tape, minute prices and books
     fair_report(conn, code, sport)         the model's fair price beside the exchange's quote, net of the fee
 
+Three optional pieces serve a venue with a login and no separate quote endpoints (ProphetX): `[api.auth]` (a login
+that returns a short-lived bearer token, its credentials read from environment variables, refreshed before its TTL),
+`[prices] unit = "american"` with `[fields.ladder]` (Yes and No ladders in American odds, read from the market rows
+themselves), and `per_event_param` on `[endpoints.instruments]` (one call per event, each market carrying its event as
+`_event`). A schema without them behaves exactly as before.
+
 Prediction kinds come from the schema's per-sport rules (a regex on the market's contract name); the subject is
 matched to a driver or team by the sport's resolver (F1: markets/polymarket/sync.Resolver). A sport listed without
 `modeled = true` is tape-only: every link is `unmodeled`, under that sport's own competition.
@@ -63,6 +69,45 @@ def price(v):
     return float(v)
 
 
+def odds_prob(v):
+    """The implied probability of American odds (+115 -> 0.4651, -128 -> 0.5614); None for a missing or invalid price
+    (American odds are at least +100 or at most -100)."""
+    if v in (None, ""):
+        return None
+    v = float(v)
+    if -100 < v < 100:
+        return None
+    return 100 / (v + 100) if v > 0 else -v / (-v + 100)
+
+
+def ladder_levels(schema, inst):
+    """(asks, bids) of a market whose Yes and No ladders come in American odds (schema fields.ladder): levels
+    [probability, size in contracts], best first. A taker buying Yes at odds o pays p(o): that is the Yes ask. A taker
+    buying No at odds o is selling Yes at 1 - p(o): that is the Yes bid. Size is what a level pays in dollars (the most a
+    taker wins plus the stake), i.e. its contracts at $1 (UNVERIFIED against the exchange: checked only against the
+    2026-10-21 fixture, where stake = win x 100 / odds)."""
+    fl = schema["fields"]["ladder"]
+    asks, bids = [], []
+    for side in EX.dig(inst, fl["sides"]) or []:
+        for lv in side if isinstance(side, list) else [side]:
+            p = odds_prob(lv.get(fl["price"]))
+            if p is None:
+                continue
+            size = float(lv.get(fl["win"]) or 0) + float(lv.get(fl["stake"]) or 0)
+            name = str(lv.get(fl["side_key"]) or "").upper()
+            if name == fl["yes"].upper():
+                asks.append([p, size])
+            elif name == fl["no"].upper():
+                bids.append([1 - p, size])
+    return sorted(asks), sorted(bids, reverse=True)
+
+
+def ladder_quote(schema, inst):
+    """A ticker-shaped dict (bid, ask, last, volume) from a market's ladders: the best Yes ask and Yes bid."""
+    asks, bids = ladder_levels(schema, inst)
+    return dict(bid=bids[0][0] if bids else None, ask=asks[0][0] if asks else None, last=None, volume=None)
+
+
 def quote(bid, ask, last):
     """(bid, ask, mid): an empty side is None; a dead book's synthetic 0.50 midpoint is treated as no quote,
     but genuine last prices still survive."""
@@ -89,6 +134,7 @@ class Client:
         http.HOST_INTERVAL.setdefault(httpx.URL(host).host, 1 / api.get("max_per_second", 4))
         self.http = httpx.Client(base_url=host.rstrip("/") + api.get("prefix", ""), timeout=api.get("timeout", 20),
                                  transport=transport)
+        self._token, self._token_until = None, 0.0
 
     def close(self):
         self.http.close()
@@ -99,14 +145,38 @@ class Client:
     def __exit__(self, *a):
         self.close()
 
+    def headers(self):
+        """The auth header of a schema with [api.auth]: log in when there is no token or it is past its TTL (one login
+        serves every call of a process). The credentials are the environment variables the schema names, never
+        printed; a missing one is a clear error."""
+        import os
+        import time
+        auth = self.schema["api"].get("auth")
+        if not auth:
+            return {}
+        if self._token is None or time.monotonic() >= self._token_until:
+            creds = {}
+            for field, var in auth["body"].items():
+                if not os.environ.get(var):
+                    raise RuntimeError(f"{self.code}: environment variable {var} is not set (credentials, "
+                                       f"exchanges/{self.code}.toml [api.auth])")
+                creds[field] = os.environ[var]
+            r = http.post(self.http, auth["login"], json=creds)
+            r.raise_for_status()
+            token = EX.dig(r.json(), auth["token"])
+            if not token:
+                raise RuntimeError(f"{self.code}: login returned no token at {auth['token']}")
+            self._token, self._token_until = token, time.monotonic() + auth.get("ttl_s", 300)
+        return {auth.get("header", "Authorization"): f"{auth['scheme']} {self._token}".strip()}
+
     def call(self, endpoint, **params):
         """The parsed response of a schema endpoint; raises on HTTP errors or the exchange's own error code."""
         ep, api = self.schema["endpoints"][endpoint], self.schema["api"]
         q = {**ep.get("params", {}), **{k: v for k, v in params.items() if v is not None}}
-        r = http.get(self.http, ep["path"], params=q)
+        r = http.get(self.http, ep["path"], params=q, headers=self.headers())
         r.raise_for_status()
         body = r.json()
-        if EX.dig(body, api["ok_path"]) != api["ok_value"]:
+        if "ok_path" in api and EX.dig(body, api["ok_path"]) != api["ok_value"]:
             raise RuntimeError(f"{self.code} {endpoint}: {EX.dig(body, api.get('error_path', 'message')) or body}")
         return body
 
@@ -126,8 +196,18 @@ class Client:
                 return
 
     def paged(self, endpoint, **params):
-        """Every row of a cursor-paged endpoint."""
+        """Every row of a cursor-paged endpoint (an endpoint with no `cursor_param` is one call)."""
+        if "cursor_param" not in self.schema["endpoints"][endpoint]:
+            return self.rows(endpoint, **params)
         return [r for page in self.pages(endpoint, **params) for r in page]
+
+    def event_markets(self, event):
+        """The markets of one event (endpoints.instruments with `per_event_param`), each carrying its event as `_event`
+        (a dict: the event row, or {} when only its id is known)."""
+        ep = self.schema["endpoints"]["instruments"]
+        ev = event if isinstance(event, dict) else {}
+        eid = EX.dig(ev, self.schema["fields"]["event"]["id"]) if ev else event
+        return [dict(mk, _event=ev) for mk in self.rows("instruments", **{ep["per_event_param"]: eid})]
 
     def batched(self, endpoint, values, **params):
         """Every row of an endpoint that takes comma-separated ids, `batch_size` at a time (and paged, if it pages)."""
@@ -166,8 +246,13 @@ def discover(client, sport):
     """(events, instruments) the exchange lists for `sport`: events whose symbol starts with one of the schema's
     prefixes, then their instruments. Settled or expired instruments have left the listing."""
     cfg, f = sport_cfg(client.schema, sport), client.schema["fields"]
-    prefixes = tuple(cfg["event_prefixes"])
-    events = [e for e in client.paged("events") if str(EX.dig(e, f["event"]["id"]) or "").startswith(prefixes)]
+    prefixes = tuple(cfg.get("event_prefixes", ()))
+    name_re = cfg.get("event_names")             # a venue whose event ids carry no sport: the event's name, a regex
+    events = [e for e in client.paged("events", **cfg.get("events_params", {}))
+              if (not prefixes or str(EX.dig(e, f["event"]["id"]) or "").startswith(prefixes))
+              and (not name_re or re.search(name_re, str(EX.dig(e, f["event"]["name"]) or ""), re.I))]
+    if "per_event_param" in client.schema["endpoints"]["instruments"]:
+        return events, [mk for e in events for mk in client.event_markets(e)]
     ids = [EX.dig(e, f["event"]["id"]) for e in events]
     return events, client.batched("instruments", ids) if ids else []
 
@@ -190,7 +275,9 @@ def link_rows(schema, sport, instruments, tickers, resolver=None):
     fi, ft = f["instrument"], f["ticker"]
     rows = []
     for inst in instruments:
-        tok = EX.dig(inst, fi["id"])
+        tok = str(EX.dig(inst, fi["id"]))             # an id the exchange writes as a number is still a text key here
+        ev_id = EX.dig(inst, fi["event"])
+        ev_id = None if ev_id is None else str(ev_id)
         subject = EX.dig(inst, fi["subject"]) or ""
         contract = EX.dig(inst, fi["contract"]) or EX.dig(inst, fi["event_title"]) or ""
         kind, who = classify(schema, sport, contract)
@@ -213,23 +300,28 @@ def link_rows(schema, sport, instruments, tickers, resolver=None):
         tk = tickers.get(tok) or {}
         bid, ask, mid = quote(price(EX.dig(tk, ft["bid"])), price(EX.dig(tk, ft["ask"])), price(EX.dig(tk, ft["last"])))
         vol = EX.dig(tk, ft["volume"])
-        tick = price(EX.dig(inst, fi["tick"]))
+        tick = price(EX.dig(inst, fi.get("tick", "")))
         rows.append(dict(
             token_id=tok, exchange=code, market_slug=tok,
-            question=contract or EX.dig(inst, fi["title"]) or tok, condition_id=EX.dig(inst, fi["event"]),
+            question=contract or EX.dig(inst, fi["title"]) or tok, condition_id=ev_id,
             outcome=subject or "Yes", neg_risk=False, tick_size=tick or 0.01, min_size=1.0,
             athlete_id=athlete_id, race_id=race_id, prediction=kind, invert=False,
             params={k: v for k, v in dict(params, **({"contract": contract} if contract else {})).items() if v is not None},
-            event_slug=EX.dig(inst, fi["event"]), event_title=EX.dig(inst, fi["event_title"]) or contract,
+            event_slug=ev_id, event_title=EX.dig(inst, fi["event_title"]) or contract,
             group_title=subject or None, last_bid=bid, last_ask=ask, last_price=mid,
             volume=float(vol) if vol not in (None, "") else None,
             end_date=when(EX.dig(inst, fi["expiry"]), fi.get("expiry_unit", "ms")),
-            closed=EX.dig(inst, fi["tradable"]) is False, resolved_yes=None,
-            active=EX.dig(inst, fi["tradable"]) is not False))
+            closed=EX.dig(inst, fi.get("tradable", "")) is False, resolved_yes=None,
+            active=EX.dig(inst, fi.get("tradable", "")) is not False))
     return rows
 
 
-def _tickers(client, ids):
+def _tickers(client, ids, instruments=()):
+    """{instrument: ticker}: from the tickers endpoint, or (a schema with fields.ladder, no tickers endpoint) from each
+    market's own ladders."""
+    if "tickers" not in client.schema["endpoints"]:
+        fi = client.schema["fields"]["instrument"]
+        return {str(EX.dig(i, fi["id"])): ladder_quote(client.schema, i) for i in instruments}
     ft = client.schema["fields"]["ticker"]
     return {EX.dig(t, ft["instrument"]): t for t in client.batched("tickers", ids)}
 
@@ -242,8 +334,8 @@ def sync(session, conn, code, sport="f1", year=2026, client=None, resolver=None)
     comp, cat = competition(session, sport)
     client = client or Client(code)
     events, instruments = discover(client, sport)
-    ids = [EX.dig(i, schema["fields"]["instrument"]["id"]) for i in instruments]
-    tickers = _tickers(client, ids) if ids else {}
+    ids = [str(EX.dig(i, schema["fields"]["instrument"]["id"])) for i in instruments]
+    tickers = _tickers(client, ids, instruments) if ids else {}
     if resolver is None and sport_cfg(schema, sport).get("modeled"):
         from racinglines.markets.polymarket.sync import Resolver
         resolver = Resolver(conn, year)
@@ -274,7 +366,7 @@ def sync(session, conn, code, sport="f1", year=2026, client=None, resolver=None)
                 setattr(link, k, v)
         stats["links"] += 1
         stats["modeled" if row["prediction"] != "unmodeled" else "unmatched"] += 1
-    live, prefixes = set(ids), tuple(sport_cfg(schema, sport)["event_prefixes"])
+    live, prefixes = set(ids), tuple(sport_cfg(schema, sport).get("event_prefixes", ()))
     for link in session.scalars(select(m.MarketLink).filter_by(exchange=code, closed=False, competition_id=comp.id)):
         if link.token_id not in live and (link.condition_id or "").startswith(prefixes):      # left the listing
             link.closed, link.active = True, False
@@ -482,11 +574,26 @@ def book_row(schema, token, body, depth=10):
                 bids=[list(x) for x in bids[:depth]], asks=[list(x) for x in asks[:depth]])
 
 
+def ladder_book_row(schema, token, inst, depth=10):
+    """A market_book_snapshots row from a market's own Yes and No ladders (see ladder_levels): bids and asks are the
+    Yes side, [probability, contracts], best first."""
+    asks, bids = ladder_levels(schema, inst)
+    return dict(token_id=token, ts=datetime.now(timezone.utc), best_bid=bids[0][0] if bids else None,
+                best_ask=asks[0][0] if asks else None, bids=bids[:depth], asks=asks[:depth])
+
+
 def snapshot_books(session, conn, code, sport=None, events=None, depth=10, client=None):
     """One order-book snapshot per open market. Returns snapshots stored."""
     from sqlalchemy.dialects.postgresql import insert as pg_insert
     client = client or Client(code)
-    rows = [book_row(client.schema, tok, client.book(tok), depth) for tok, _ in links_of(conn, code, sport, events, open_only=True)]
+    links = links_of(conn, code, sport, events, open_only=True)
+    if "book" in client.schema["endpoints"]:
+        rows = [book_row(client.schema, tok, client.book(tok), depth) for tok, _ in links]
+    else:                                   # the books come with the markets: one call per event, not per market
+        fi, want, rows = client.schema["fields"]["instrument"], {tok for tok, _ in links}, []
+        for ev in sorted({ev for _, ev in links if ev}):
+            rows += [ladder_book_row(client.schema, str(EX.dig(mk, fi["id"])), mk, depth)
+                     for mk in client.event_markets(ev) if str(EX.dig(mk, fi["id"])) in want]
     if rows:
         session.execute(pg_insert(m.MarketBookSnapshot).values(rows).on_conflict_do_nothing())
         session.commit()

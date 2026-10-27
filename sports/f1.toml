@@ -96,6 +96,8 @@ pre_label = "pre-weekend"
 pre_minutes = 60                         # "before any running": 1 h before the first session
 lag_minutes = 30                         # a session's data is used 30 min after it ends
 until = "Race"
+pre_race_minutes = 240                   # live fantasy only: one "pre-race" stage 4 h before lights out, priced by the
+                                         # last stage's run (Mexico spec change 1, owner 26 Oct); backtests skip it
 
 [stages.closes]                          # a market kind closes when this session starts (a list: either name)
 race_pole = "Qualifying"                 # pole markets close when qualifying starts
@@ -191,9 +193,10 @@ late_alert_h = 2                # alert when an update is more than 2 hours late
 stale_h = 30                    # the Live tab stays green between updates while the next one isn't this overdue
 
 [live.markets]
-kinds = ["race_win", "race_podium", "race_pole", "race_h2h", "race_constructor_top"]
-# opt-in props (models/props.py): "race_safety_car", "race_red_flag", "race_rain", "race_fastest_lap";
-# add them here or in a launch spec. [live.props] prior_n (default 16) sets the per-circuit shrinkage
+kinds = ["race_win", "race_podium", "race_pole", "race_h2h", "race_constructor_top",
+         "race_safety_car", "race_red_flag", "race_rain", "race_fastest_lap"]
+# every kind the live book prices, props included (models/props.py) since 2026-10-21 (owner: "ALL markets we currently
+# support", rounds 18-23); a launch spec can narrow it. [live.props] prior_n (default 16) sets the per-circuit shrinkage
 h2h_from = "last_listed"        # head-to-head pairs: the last race Polymarket listed (or an event key)
 
 [live.quoting]

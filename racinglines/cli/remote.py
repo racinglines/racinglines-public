@@ -227,6 +227,8 @@ def call(tool, arguments, server=None, tok=None, http_client=None, open_browser=
     async def seen(response):
         if response.status_code >= 400:
             statuses.append(response.status_code)
+        if response.status_code == 401:                    # the server's own words (a sign-up prompt), if it sent any
+            statuses.append(_said(await response.aread()))
 
     async def go():
         bearer = tok or token()
@@ -353,12 +355,27 @@ def _reason(ex, statuses=()):
     """One line the user can act on: the HTTP status the server answered, else the innermost message of an exception
     group (anyio wraps transport errors)."""
     if 401 in statuses:
-        return ("401 Unauthorized: the token or login is wrong, revoked or for an account that may not use MCP "
-                "(`racinglines book logout` forgets a stored login)")
+        said = next((s for s in statuses if isinstance(s, str) and s), "")
+        return "401 Unauthorized: " + (said or "the token or login is wrong, revoked or for an account that may not use "
+                                       "MCP (`racinglines book logout` forgets a stored login)")
+    statuses = [s for s in statuses if isinstance(s, int)]
     while isinstance(ex, BaseExceptionGroup) and ex.exceptions:
         ex = ex.exceptions[0]
     msg = str(ex).splitlines()[0] if str(ex) else type(ex).__name__
     return (f"HTTP {statuses[-1]}: " if statuses else "") + msg[:300]
+
+
+def _said(body):
+    """The message a 401's body carries (JSON `message`, else plain text), or "". The OAuth fields (`error`,
+    `error_description`: "Authentication required") say less than the generic line, so they are ignored."""
+    text = (body or b"").decode("utf-8", "replace").strip()
+    try:
+        d = json.loads(text)
+    except ValueError:
+        return text[:500] if text and not text.startswith("<") else ""
+    if not isinstance(d, dict):
+        return ""
+    return str(d.get("message") or "")[:500]
 
 
 def run(cmd, raw_book, server=None, runs=(), open_browser=None):

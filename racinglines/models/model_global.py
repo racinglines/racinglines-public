@@ -52,7 +52,7 @@ class GlobalModel(ResultsCore):
         m = schema.get("model", {})
         where = f"sports/{sport}.toml [model]"
         declared = INP.declared(m, where)
-        own = INP.core_for(declared, None, where)             # the schema's own level
+        own = INP.core_for(declared, m.get("core"), where)    # the schema's own level ([model] core pins it when several fit)
         spec = own if core in (None, own.key) else INP.core_for(declared, core, where)
         used = tuple(i for i in declared if i in spec.reads())
         defaults = dict(m.get("defaults", {}) if spec is own else m.get(spec.key, {}).get("defaults", {}))
@@ -68,3 +68,10 @@ class GlobalModel(ResultsCore):
         return type(f"GlobalModel[{sport}]", bases,
                     dict(sport=sport, inputs=used, core=spec.key, name=name,
                          noise_unit=getattr(impl, "noise_unit", None), **attrs))
+
+    def at_stage(self, ev, label):
+        """`ev` unchanged: the engine (every core: results, laps, timed runs) prices an event once, as of its cutoff,
+        the same at every stage label, so `backtest walk-forward --stage LABEL` runs for it and its records carry the
+        label, pairing with a stage-priced challenger's run in `eval compare` (Core v2 S3b). The CLI's --stage, the
+        walk_forward job's stage and the MCP run_job param reach it; it is a method, not a setting (no settings key)."""
+        return ev

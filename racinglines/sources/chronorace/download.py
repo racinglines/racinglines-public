@@ -27,9 +27,9 @@ sometimes, e.g. "_edr" for standalone Enduro weekends vs "_mtb" for combined
 XCO+XCC+DHI weekends).
 
 If Wikipedia's page doesn't exist yet for a year (future year, or before the
-page is created), is incomplete, or you'd rather skip the scrape entirely,
+page is created), is incomplete, or you'd rather skip the Wikipedia lookup entirely,
 pass --events explicitly with known ChronoRace slugs (see --list-only to
-preview what would be scraped without downloading anything).
+preview what would be fetched without downloading anything).
 
 WHAT'S CONFIRMED VS. UNVERIFIED
 ----------------------------------------------------------------------
@@ -61,7 +61,7 @@ USAGE
     # Download everything found:
     racinglines data download mtb_dh --year 2026 --discipline DH --category "Elite Men" --out-dir results/
 
-    # Skip the Wikipedia scrape and give exact ChronoRace slugs yourself:
+    # Skip the Wikipedia lookup and give exact ChronoRace slugs yourself:
     racinglines data download mtb_dh --events 20260821_mtb 20260611_mtb \\
         --discipline DH --category "Elite Men" --out-dir results/
 
@@ -80,7 +80,7 @@ import requests
 
 from racinglines.sources import http
 
-USER_AGENT = "Mozilla/5.0 (compatible; chronorace-downloader/1.0)"
+USER_AGENT = "racinglines (+https://github.com/racinglines/racinglines-public)"   # says who we are (owner, 26 Oct)
 CMS_URL = "https://prod.chronorace.be/api/results/uci/dh/cms/{slug}"
 GENERIC_RESULTS_URL = "https://prod.chronorace.be/api/results/generic/uci/{slug}/{disc_api}?key={key}"
 
@@ -144,7 +144,7 @@ def resolve_discipline(name):
 
 
 def discover_event_slugs(year, discipline_id, session):
-    """Scrape Wikipedia's '{year} UCI Mountain Bike World Cup' page for
+    """Read Wikipedia's '{year} UCI Mountain Bike World Cup' page for
     ChronoRace result-PDF citations and pull out the event slugs relevant to
     the requested discipline. This is the ONLY known way to get a year-level
     event list -- see the module docstring."""
@@ -416,8 +416,8 @@ def main():
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument("--year", type=int, help="Season year, e.g. 2026 (used to scrape the Wikipedia calendar for event slugs).")
-    ap.add_argument("--events", nargs="+", help="Explicit ChronoRace event slugs (e.g. 20260821_mtb), skips the Wikipedia scrape.")
+    ap.add_argument("--year", type=int, help="Season year, e.g. 2026 (used to read the Wikipedia calendar for event slugs).")
+    ap.add_argument("--events", nargs="+", help="Explicit ChronoRace event slugs (e.g. 20260821_mtb), skips the Wikipedia lookup.")
     ap.add_argument("--discipline", required=True, help="DH, XCO, XCC, or EDR.")
     ap.add_argument("--category", required=True, help="'Elite Men', 'Elite Women', 'Junior Men', 'Junior Women', 'U23 Men', 'U23 Women'.")
     ap.add_argument("--out-dir", default=None, help="Directory to write one .md file per event into "

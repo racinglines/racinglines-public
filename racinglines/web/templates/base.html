@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
 <title>{% block title %}racinglines{% endblock %} · racinglines</title>
 <link rel="stylesheet" href="/static/style.css?v={{ css_v() }}">
 <script src="/static/htmx.min.js" defer></script><script src="/static/app.js?v={{ css_v() }}" defer></script>{% block head %}{% endblock %}</head>
@@ -18,7 +18,7 @@
   {% else %}
   {% if user %}{{ nav("/markets", "Markets") }}
   {% if live_nav %}{% call nav("/live", "Live") %} <span class="dot {{ 'live' if live_nav == 'live' }}" title="{{ 'A final is running' if live_nav == 'live' else 'The last event, as a replay' }}"></span>{% endcall %}{% endif %}{% endif %}
-  {% if user %}{% call nav("/strategy", "Strategy") %}{% if signals_nav and signals_nav.unread %} <span class="pill new">{{ signals_nav.unread }}</span>{% endif %}{% endcall %}{{ nav("/positions", "Positions") }}{% if fantasy_on is defined and fantasy_on() %}{{ nav("/trade", "Trade") }}{{ nav("/history", "My F$") }}{% endif %}{% endif %}
+  {% if user %}{% call nav("/strategy", "Strategy") %}{% if signals_nav and signals_nav.unread %} <span class="pill new">{{ signals_nav.unread }}</span>{% endif %}{% endcall %}{{ nav("/positions", "Positions") }}{% if fantasy_on is defined and fantasy_on() %}{{ nav("/trade", "Trade") }}{{ nav("/history", "My Ⓕ") }}{% endif %}{% endif %}
   {% if user and user.role in ('admin', 'pro') %}<span class="sep" aria-hidden="true"></span>{{ nav("/book", "Books" if user.role == 'admin' else "My book") }}{{ nav("/lab", "Lab") }}{% endif %}
   {% if user and user.role == 'admin' %}{{ nav("/admin", "Admin") }}{% endif %}
   {% endif %}

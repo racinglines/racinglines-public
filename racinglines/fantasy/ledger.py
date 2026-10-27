@@ -186,21 +186,28 @@ STRATEGY_PNL = """
     WHERE y IS NOT NULL GROUP BY user_id"""
 
 
+# A by-hand ledger adjustment (ref_table 'adjustment', e.g. the owner paying Austin's make-whole, 26 Oct) moves the
+# account's balance but is no trade: it stays out of the by-hand P&L, the ROI and the trade count (owner, 26 Oct 16:37Z).
+ADJUSTMENT = "adjustment"
+
+
 def summary(conn, user_id, quotes=None):
-    """One account's numbers: cash, open manual positions at their mark, the manual P&L, the followed strategy's P&L
-    and the total F$ (the grant plus both P&Ls). -> dict"""
+    """One account's numbers: cash, open manual positions at their mark, the manual P&L, the followed strategy's P&L,
+    any adjustments and the total F$ (the grant plus both P&Ls plus adjustments). -> dict"""
     c = cash(conn, user_id)
-    grant = float(conn.execute(text("""SELECT coalesce(sum(amount), 0) FROM accounts.fantasy_ledger
-                                       WHERE user_id = :u AND ref_table IS NULL"""), dict(u=user_id)).scalar())
+    grant, adjust = (float(v) for v in conn.execute(text("""
+        SELECT coalesce(sum(amount) FILTER (WHERE ref_table IS NULL), 0),
+               coalesce(sum(amount) FILTER (WHERE ref_table = :adj), 0)
+        FROM accounts.fantasy_ledger WHERE user_id = :u"""), dict(u=user_id, adj=ADJUSTMENT)).one())
     pos = positions(conn, user_id, open_only=True, quotes=quotes)
     held = sum(p["value"] or 0 for p in pos)
     unpriced = sum(p["value"] is None for p in pos)
     srow = conn.execute(text(f"SELECT pnl, n FROM ({STRATEGY_PNL}) s WHERE user_id = :u"), dict(u=user_id)).first()
     strat = float(srow[0]) if srow and srow[0] is not None else 0.0
-    manual = round(c + held - grant, 2)
+    manual = round(c + held - grant - adjust, 2)
     return dict(grant=grant, cash=round(available(conn, user_id), 2), held=round(held, 2), open=len(pos), unpriced=unpriced,
                 manual_pnl=manual, strategy_pnl=round(strat, 2), strategy_positions=int(srow[1]) if srow else 0,
-                total=round(grant + manual + strat, 2))
+                adjustment=round(adjust, 2), total=round(grant + adjust + manual + strat, 2))
 
 
 def open_tokens(conn, user_id=None):
@@ -212,16 +219,19 @@ def open_tokens(conn, user_id=None):
 
 
 def leaderboard(conn, hide=(), quotes=None):
-    """Every active account with a ledger, ranked by total F$ (grant + manual P&L + strategy P&L), best first. `hide`:
-    usernames left out (the demo and system accounts). Open positions count at their mark (quotes as in positions);
-    one with no price counts at nothing. -> [dict(rank, username, total, manual_pnl, strategy_pnl, cash, open)]"""
+    """Every active account with a ledger, ranked by total F$ (grant + manual P&L + strategy P&L + adjustments), best
+    first. `hide`: usernames left out (the demo and system accounts). Open positions count at their mark (quotes as in
+    positions); one with no price counts at nothing. -> [dict(rank, username, total, manual_pnl, strategy_pnl,
+    adjustment, cash, open)]"""
     rs = conn.execute(text(f"""
-        WITH led AS (SELECT user_id, sum(amount) AS cash, sum(amount) FILTER (WHERE ref_table IS NULL) AS grant_
+        WITH led AS (SELECT user_id, sum(amount) AS cash, sum(amount) FILTER (WHERE ref_table IS NULL) AS grant_,
+                            sum(amount) FILTER (WHERE ref_table = :adj) AS adjust
                      FROM accounts.fantasy_ledger GROUP BY user_id),
              st AS ({STRATEGY_PNL})
-        SELECT u.id, u.username, led.cash, coalesce(led.grant_, 0) AS grant_, coalesce(st.pnl, 0) AS strategy_pnl
+        SELECT u.id, u.username, led.cash, coalesce(led.grant_, 0) AS grant_, coalesce(led.adjust, 0) AS adjust,
+               coalesce(st.pnl, 0) AS strategy_pnl
         FROM users u JOIN led ON led.user_id = u.id LEFT JOIN st ON st.user_id = u.id
-        WHERE u.active AND NOT (u.username = ANY(:hide))"""), dict(hide=list(hide))).mappings().all()
+        WHERE u.active AND NOT (u.username = ANY(:hide))"""), dict(hide=list(hide), adj=ADJUSTMENT)).mappings().all()
     held = {}
     for r in conn.execute(text("""
             SELECT p.user_id, p.yes_shares, p.no_shares, ml.token_id, ml.last_bid, ml.last_ask
@@ -237,22 +247,26 @@ def leaderboard(conn, hide=(), quotes=None):
     out = []
     for r in rs:
         v, n = held.get(r["id"], (0.0, 0))
-        manual = float(r["cash"]) + v - float(r["grant_"])
+        adjust = float(r["adjust"])
+        manual = float(r["cash"]) + v - float(r["grant_"]) - adjust
         strat = float(r["strategy_pnl"])
         out.append(dict(username=r["username"], cash=round(float(r["cash"]), 2), open=n,
-                        manual_pnl=round(manual, 2), strategy_pnl=round(strat, 2),
-                        total=round(float(r["grant_"]) + manual + strat, 2)))
+                        manual_pnl=round(manual, 2), strategy_pnl=round(strat, 2), adjustment=round(adjust, 2),
+                        total=round(float(r["grant_"]) + adjust + manual + strat, 2)))
     out.sort(key=lambda r: (-r["total"], r["username"]))
     for i, r in enumerate(out, 1):
         r["rank"] = i
     return out
 
 
-# The leaderboard's score (owner, 2026-10-12 19:18Z: "roi times square root of total trades or something like that"):
-# ROI = P&L / F$ staked, score = ROI x sqrt(trades). A player needs MIN_TRADES to be ranked, so one lucky trade can't
+# The leaderboard's score (owner, 2026-10-25 21:03Z-21:04Z: "ROI is primary figure of merit, trade volume adds a
+# gradual boost. 1000 trades significantly better (2x?) than 100 trades and same ROI"; it replaces 2026-10-12's
+# ROI x sqrt(trades)): ROI = P&L / F$ staked, score = ROI x (trades / 10) ** 0.3, so ten times the trades doubles the
+# boost (x1 at 10 trades, x2 at 100, x4 at 1,000). A player needs MIN_TRADES to be ranked, so one lucky trade can't
 # top the board. Trades and stakes count both sources: an order filled by hand (staked = what its buys paid, fees
 # included) and a market the followed strategy traded (staked = what it paid in, net of what it sold back).
 MIN_TRADES = 5
+VOLUME_BASE, VOLUME_POWER = 10, 0.3          # the boost: (trades / VOLUME_BASE) ** VOLUME_POWER (10 ** 0.3 = 2 per decade)
 
 TRADE_STATS = """
     WITH m AS (SELECT o.user_id, count(DISTINCT o.id) AS trades,
@@ -269,7 +283,8 @@ TRADE_STATS = """
 def score(pnl, staked, trades):
     """(roi, score) for the leaderboard; roi is None with nothing staked, score None below MIN_TRADES."""
     roi = pnl / staked if staked > 0 else None
-    return roi, (round(roi * trades ** 0.5, 4) if roi is not None and trades >= MIN_TRADES else None)
+    return roi, (round(roi * (trades / VOLUME_BASE) ** VOLUME_POWER, 4) if roi is not None and trades >= MIN_TRADES
+                 else None)
 
 
 def ranked(conn, hide=(), quotes=None):

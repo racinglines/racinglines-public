@@ -3,6 +3,34 @@
 Every version on PyPI, newest first. Each one is a single commit and tag `vX` in this repository
 (<https://github.com/racinglines/racinglines-public>), and that is the tree PyPI's build came from.
 
+## 1.0.3 (2026-10-26)
+
+- **Removed: ProCyclingStats (PCS).** racinglines no longer documents, recommends or supports fetching road-cycling
+  results from ProCyclingStats. The quickstart's data-sources table, the CLI reference and the road-cycling page drop it,
+  along with the extra packages that page told you to install for it. No released version shipped the PCS client, and
+  none ships any scraping or anti-bot tool. The release export now fails if such a tool is named anywhere in the
+  package or its docs.
+- The downhill downloader (`racinglines data download mtb_dh`) identifies itself as `racinglines` with this
+  repository's URL instead of a browser-style user agent.
+- `racinglines remote` and `--remote`: when the hosted server answers 401 with a message, such as the sign-up prompt
+  after the demo's free calls, the CLI prints that message instead of the generic "401 Unauthorized" line.
+- Fantasy (F$): strategy picks stay open until lights out and close at the race start. A late pick trades only the
+  stages priced after it, never a session that already ran. A player with no pick gets no trades: the random-style
+  fallback and `racinglines users assign-random` are gone. Picking from a popup, an admin Pick locks page, an
+  "available to follow" flag per style, and a pre-race stage 4 h before lights out for every player. Live strategy
+  orders walk the recorded book at each stage, and a followed strategy has no per-market stake cap (bankroll, edge
+  and sizing only). The leaderboard score is ROI × (trades / 10)^0.3. A by-hand ledger adjustment moves the balance
+  only. F-bucks show as Ⓕ.
+- Sign-in matches the username ignoring case, or a unique display name or email.
+- Order confirmations say when an order was checked against the venue's live book.
+- Models: every F1 live-book market is priced. Saved forecast runs record `calib_power`, which stays `off` by default
+  in the package. New opt-in pieces: the `gridnoise` variant, `--trades-out` (every sweep trade to Parquet), a
+  teammate head-to-head kind in walk-forward, and `racinglines eval compare`, which pairs two saved runs by event
+  with ±2 SE. Default prices are unchanged. The package prices with the one engine (`model_global`) and its laps,
+  run-times and results cores; the Plackett-Luce challenger stays out.
+- The Markets board prices from the live default's runs only, not the newest live run of any profile.
+- The web app serves `robots.txt`, `sitemap.xml` and meta tags, with private pages marked noindex.
+
 ## 1.0.2 (2026-10-19)
 
 Install in steps now: `racinglines[db]` runs every command, `racinglines[mcp]` adds the MCP server, and

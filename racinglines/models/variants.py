@@ -21,6 +21,7 @@ SWITCHES = {
     "pretrain": dict(PRE_PRACTICE_TRAIN=True),     # F1-2 step 2: no-practice training for pre-FP1 pricing
     "gbm": dict(FINISH_MODEL="gbm"),               # F1-2 step 3: gradient-boosted finishing model
     "tail": dict(CHAOS=True, TEAM_DNF_CORR=True),  # F1-3: disrupted-race mixture + correlated retirements
+    "gridnoise": dict(GRID_NOISE=True),            # finishing noise per starting-grid band, fitted walk-forward
     "reset": dict(REG_RESET=True),                 # earlier seasons' car pace discounted in a new-regulations year
     "rookie": dict(ROOKIE_CARRY=0.25),             # F1-2: a finished rookie season's teammate gaps count a quarter
     "fastlap": dict(FASTEST_LAP=True),             # adds the fastest lap (fl_prob); every other price unchanged
@@ -33,6 +34,8 @@ DESCRIPTION = {
     "gridq": "the front-of-grid term only once the real grid is known (after qualifying)",
     "pretrain": "before any practice, uses a finishing model trained on no-practice paces",
     "gbm": "gradient-boosted finishing model (monotone in grid and pace), out-of-time noise",
+    "gridnoise": "finishing noise fitted per starting-grid band (P1, P2, P3-4, P5-6, P7-10, P11+) on earlier races, "
+                 "instead of one noise level for every car",
     "tail": "some simulated races are disrupted (more noise and retirements); teammates' retirements correlated",
     "reset": "in a season with new technical regulations (2022, 2026), earlier seasons' car pace counts a quarter",
     "rookie": "once a driver's rookie season is over, its teammate comparisons count a quarter in the driver offsets",
